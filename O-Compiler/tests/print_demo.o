@@ -1,0 +1,51 @@
+fn putchar(int c) -> int;
+
+// Helper function for multiplication since '*' has known issues
+fn mul(int a, int b) -> int {
+    var sum = 0;
+    while (b > 0) {
+        sum = sum + a;
+        b = b - 1;
+    }
+    return sum;
+}
+
+fn print_int(int n) -> int {
+    if (n < 0) {
+        putchar(45); // Print '-'
+        n = 0 - n;
+    }
+    
+    // Check if we have more than one digit
+    if (n > 9) {
+        var div = n / 10;
+        print_int(div); // Recursion
+    }
+    
+    // Manual Modulo: n % 10  ==  n - (n / 10) * 10
+    var div2 = n / 10;
+    var remainder = n - mul(div2, 10);
+    
+    // '0' is ASCII 48
+    putchar(48 + remainder);
+    
+    return 0;
+}
+
+fn main() -> int {
+    var x = 100;
+    var y = 25;
+    var result = x + y; // 125
+    
+    // Print "OK: "
+    putchar(79); // O
+    putchar(75); // K
+    putchar(58); // :
+    putchar(32); // space
+    
+    print_int(result);
+    
+    putchar(10); // Newline
+    
+    return 0;
+}

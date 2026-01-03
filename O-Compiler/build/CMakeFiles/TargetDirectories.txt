@@ -1,0 +1,7 @@
+/home/i/Desktop/Pedro/projetos/MadCoder/O/O-Compiler/build/CMakeFiles/intrinsics_gen.dir
+/home/i/Desktop/Pedro/projetos/MadCoder/O/O-Compiler/build/CMakeFiles/omp_gen.dir
+/home/i/Desktop/Pedro/projetos/MadCoder/O/O-Compiler/build/CMakeFiles/acc_gen.dir
+/home/i/Desktop/Pedro/projetos/MadCoder/O/O-Compiler/build/CMakeFiles/RISCVTargetParserTableGen.dir
+/home/i/Desktop/Pedro/projetos/MadCoder/O/O-Compiler/build/CMakeFiles/oc.dir
+/home/i/Desktop/Pedro/projetos/MadCoder/O/O-Compiler/build/CMakeFiles/edit_cache.dir
+/home/i/Desktop/Pedro/projetos/MadCoder/O/O-Compiler/build/CMakeFiles/rebuild_cache.dir

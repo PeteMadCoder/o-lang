@@ -1,0 +1,128 @@
+CompilationUnit ::= ModuleDecl ImportDecl* TopLevelDecl*
+
+ModuleDecl      ::= "module" Identifier ";"
+ImportDecl      ::= "import" QualifiedName ";"
+
+QualifiedName   ::= Identifier { "." Identifier }
+
+TopLevelDecl    ::= ClassDecl
+                  | StructDecl
+                  | FunctionDecl
+                  | GlobalVarDecl
+
+ClassDecl       ::= [ "open" ] "class" Identifier [ GenericParams ] [ Inheritance ] "{" ClassMember* "}"
+
+Inheritance     ::= ":" Identifier [ GenericArgs ]
+
+ClassMember     ::= FieldDecl
+                  | MethodDecl
+                  | ConstructorDecl
+
+FieldDecl       ::= Type IdentifierList ";"
+
+ConstructorDecl ::= "new" "(" [ ParamList ] ")" Block
+
+MethodDecl      ::= [ MethodModifier ] "fn" Identifier "(" [ ParamList ] ")" [ "->" Type ] Block
+
+MethodModifier  ::= "virtual" | "override" | "static"
+
+StructDecl      ::= "struct" Identifier [ GenericParams ] "{" StructMember* "}"
+
+StructMember    ::= FieldDecl
+                  | MethodDecl        (* Structs can have methods, but usually not virtual *)
+                  | ConstructorDecl
+
+FunctionDecl    ::= "fn" Identifier "(" [ ParamList ] ")" [ "->" Type ] Block
+
+ParamList       ::= Param { "," Param }
+Param           ::= Type Identifier
+
+Block           ::= "{" Statement* "}"
+
+Statement       ::= VariableDecl
+                  | AssignmentStmt
+                  | ReturnStmt
+                  | ExpressionStmt
+                  | Block
+                  | IfExpr        (* Can be used as a statement *)
+                  | MatchExpr     (* Can be used as a statement *)
+                  | LoopStmt
+                  | UnsafeBlock
+                  | ";"
+
+(* Variable Declarations: Hybrid C/Rust approach *)
+VariableDecl    ::= "var" Identifier [ "=" Expression ] ";"           (* Inferred Immutable *)
+                  | "mut" Identifier [ ":" Type ] [ "=" Expression ] ";" (* Mutable *)
+                  | Type Identifier [ "=" Expression ] ";"            (* C-Style Explicit *)
+
+AssignmentStmt  ::= Expression AssignmentOp Expression ";"
+
+ReturnStmt      ::= "return" [ Expression ] ";"
+
+LoopStmt        ::= "while" "(" Expression ")" Block
+                  | "for" "(" [ Statement ] Expression ";" [ Statement ] ")" Block
+
+UnsafeBlock     ::= "unsafe" Block
+
+ExpressionStmt  ::= Expression ";"
+
+Expression      ::= LogicalOr
+
+LogicalOr       ::= LogicalAnd { "||" LogicalAnd }
+LogicalAnd      ::= Equality { "&&" Equality }
+Equality        ::= Relational { ( "==" | "!=" ) Relational }
+Relational      ::= Additive { ( "<" | ">" | "<=" | ">=" ) Additive }
+Additive        ::= Multiplicative { ( "+" | "-" ) Multiplicative }
+Multiplicative  ::= Unary { ( "*" | "/" | "%" ) Unary }
+
+Unary           ::= ( "-" | "!" | "*" | "&" ) Unary
+                  | PostfixExpr
+
+PostfixExpr     ::= Primary { PostfixOp }
+PostfixOp       ::= "(" [ ArgList ] ")"      (* Function Call *)
+                  | "[" Expression "]"       (* Indexing *)
+                  | "." Identifier           (* Member Access *)
+
+Primary         ::= Identifier
+                  | Literal
+                  | "(" Expression ")"
+                  | IfExpr
+                  | MatchExpr
+                  | NewExpr
+
+(* Instantiation *)
+NewExpr         ::= "new" Type "(" [ ArgList ] ")"
+
+ArgList         ::= Expression { "," Expression }
+
+(* Control Flow Expressions *)
+IfExpr          ::= "if" "(" Expression ")" Block [ "else" ( Block | IfExpr ) ]
+
+MatchExpr       ::= "match" "(" Expression ")" "{" MatchCase* "}"
+MatchCase       ::= ( Literal | "_" ) "=>" ( Statement | Block )
+
+Type            ::= PrimitiveType
+                  | PointerType
+                  | ArrayType
+                  | GenericType
+                  | Identifier
+
+PrimitiveType   ::= "int" | "float" | "bool" | "char" | "void" | "byte"
+
+(* Reference Types *)
+PointerType     ::= "*" Type              (* Raw Pointer *)
+                  | "shared" Type         (* ARC Smart Pointer *)
+
+ArrayType       ::= Type "[" [ Integer ] "]"
+
+GenericType     ::= Identifier GenericArgs
+
+GenericParams   ::= "<" Identifier { "," Identifier } ">"
+GenericArgs     ::= "<" Type { "," Type } ">"
+
+Identifier      ::= [a-zA-Z_] { [a-zA-Z0-9_] }
+Integer         ::= [0-9]+
+Float           ::= [0-9]+ "." [0-9]+
+Literal         ::= Integer | Float | StringLiteral | BooleanLiteral
+BooleanLiteral  ::= "true" | "false"
+AssignmentOp    ::= "=" | "+=" | "-=" | "*=" | "/="

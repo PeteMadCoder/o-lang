@@ -1,0 +1,19 @@
+fn factorial(int n) -> int {
+    if (n < 2) { 
+        return 1; 
+    }
+    return n * factorial(n - 1);
+}
+
+fn test_vars() -> int {
+    var a = 10;
+    var b = 20;
+    a = a + b;
+    return a;
+}
+
+fn main() -> int {
+    var f = factorial(5);
+    var v = test_vars();
+    return f + v;
+}
