@@ -1,0 +1,12 @@
+fn putchar(int c) -> int;
+
+fn main() -> int {
+    var ch = 'A';  // char (65)
+    var num = 10;  // int
+    var result = ch + num;  // Should promote char to int: 65 + 10 = 75
+    
+    putchar(result);  // Should print 'K' (ASCII 75)
+    putchar('\n');
+    
+    return 0;
+}

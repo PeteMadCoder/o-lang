@@ -1,0 +1,26 @@
+fn comprehensivePointerTest() -> int {
+    var x = 100;
+    var y = 200;
+    
+    // Safe operations
+    var ptr_x = &x;
+    var ptr_y = &y;
+    var ptr_ptr_x = &ptr_x;
+    
+    // Unsafe operations
+    var result = unsafe {
+        var val_x = *ptr_x;      // Should be 100
+        var val_y = *ptr_y;      // Should be 200
+        var ptr_from_ptr = *ptr_ptr_x; // Should be ptr_x
+        var val_from_nested = *ptr_from_ptr; // Should be 100
+        
+        val_x + val_y // Return 300
+    };
+    
+    return result;
+}
+
+fn main() -> int {
+    var final_result = comprehensivePointerTest();
+    return final_result; // Should be 300
+}

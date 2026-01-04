@@ -52,14 +52,7 @@ int main(int argc, char** argv) {
     Parser parser(lexer);
 
     while (!parser.isEOF()) {
-        auto funcAST = parser.ParseDefinition();
-        if (funcAST) {
-            auto *IR = funcAST->codegen();
-            if (!IR) {
-                std::cerr << "Codegen failed.\n";
-                return 1;
-            }
-        } else {
+        if (!parser.ParseTopLevel()) {
             std::cerr << "Parsing failed.\n";
             return 1;
         }
@@ -109,7 +102,7 @@ int main(int argc, char** argv) {
     std::cout << "Object file written to " << objFilename << "\n";
     
     // 7. Link to Executable
-    std::string cmd = "clang " + objFilename + " -o output -lm";
+    std::string cmd = "clang -no-pie " + objFilename + " -o output -lm";
     
     std::cout << "Linking: " << cmd << "\n";
     int ret = system(cmd.c_str());

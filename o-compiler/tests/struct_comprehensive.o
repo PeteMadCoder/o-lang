@@ -1,0 +1,13 @@
+struct Point {
+    int x;
+    int y;
+}
+
+struct Rectangle {
+    int width;
+    int height;
+}
+
+fn main() -> int {
+    return 0;
+}

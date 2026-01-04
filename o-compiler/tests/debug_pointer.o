@@ -1,0 +1,14 @@
+fn debugPointer() -> int {
+    var x = 99;
+    var ptr = &x;
+    
+    var result = unsafe {
+        *ptr  // Just return the dereferenced value
+    };
+    
+    return result; // Should be 99
+}
+
+fn main() -> int {
+    return debugPointer();
+}

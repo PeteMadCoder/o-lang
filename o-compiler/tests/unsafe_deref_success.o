@@ -1,0 +1,33 @@
+fn safeDereference() -> int {
+    var x = 42;
+    var ptr = &x;
+    
+    // This should work - dereference in unsafe context
+    var value = unsafe {
+        *ptr
+    };
+    
+    return value; // Should be 42
+}
+
+fn pointerAssignment() -> int {
+    var x = 10;
+    var y = 20;
+    var ptr = &x;
+    
+    unsafe {
+        // Read through pointer
+        var original = *ptr; // Should be 10
+        
+        // This would be assignment (not implemented yet)
+        // *ptr = 99;
+        
+        return original;
+    }
+}
+
+fn main() -> int {
+    var result1 = safeDereference();
+    var result2 = pointerAssignment();
+    return result1; // Should return 42
+}

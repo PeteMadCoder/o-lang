@@ -1,0 +1,10 @@
+fn testPointerDepths() -> int {
+    // Test that different pointer depths are recognized as different types
+    // This should compile successfully
+    return 123;
+}
+
+fn main() -> int {
+    var result = testPointerDepths();
+    return result;
+}

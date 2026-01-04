@@ -1,0 +1,12 @@
+fn complexPointers(*int ptr1, **float ptr2, ***char ptr3) -> **int {
+    var x = 42;
+    return ptr1; // This will cause a type error, but should parse
+}
+
+fn simplePointers(*int a, *float b) -> void {
+    var temp = 0;
+}
+
+fn main() -> int {
+    return 0;
+}

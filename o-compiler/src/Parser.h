@@ -8,6 +8,7 @@
 class Parser {
     Lexer& lexer;
     Token curTok;
+    int unsafeDepth = 0; // Track unsafe block nesting depth
 
 public:
     Parser(Lexer& lex);
@@ -21,14 +22,33 @@ public:
     // Error Handling
     std::unique_ptr<ExprAST> LogError(const char* str);
     std::unique_ptr<PrototypeAST> LogErrorP(const char* str);
+    void LogSafetyError(const char* str); // Safety-specific error handling
+
+    // Safety Context Management
+    void enterUnsafe() { unsafeDepth++; }
+    void exitUnsafe() { unsafeDepth--; }
+    bool isInUnsafeContext() const { return unsafeDepth > 0; }
+    
+    // Demonstration method for safety checking
+    void checkUnsafeOperation(const char* operation) {
+        if (unsafeDepth == 0) {
+            LogSafetyError(operation);
+        }
+    }
 
     // --- Expression Parsing ---
 
-    // Parse a type (e.g., "int", "float")
+    // Parse a type (e.g., "int", "float", "char", "byte")
     OType ParseType();
 
     // num ::= number
     std::unique_ptr<ExprAST> ParseNumberExpr();
+    
+    // char ::= 'c'
+    std::unique_ptr<ExprAST> ParseCharExpr();
+    
+    // string ::= "hello"
+    std::unique_ptr<ExprAST> ParseStringExpr();
 
     // parenexpr ::= '(' expression ')'
     std::unique_ptr<ExprAST> ParseParenExpr();
@@ -48,6 +68,16 @@ public:
     //   ::= parenexpr
     //   ::= ifexpr
     std::unique_ptr<ExprAST> ParsePrimary();
+    
+    // postfix
+    //   ::= primary postfixop*
+    //   postfixop ::= '.' identifier
+    std::unique_ptr<ExprAST> ParsePostfix();
+    
+    // unary
+    //   ::= '&' unary
+    //   ::= postfix
+    std::unique_ptr<ExprAST> ParseUnary();
 
     // binoprhs
     //   ::= ('+' primary)*
@@ -80,6 +110,24 @@ public:
 
     // definition ::= prototype expression
     std::unique_ptr<FunctionAST> ParseDefinition();
+    
+    // struct ::= 'struct' Name '{' field* '}'
+    std::unique_ptr<StructDeclAST> ParseStruct();
+    
+    // Parse top-level declaration (function or struct)
+    bool ParseTopLevel();
+    
+    // Parse identifier list: name1, name2, name3
+    std::vector<std::string> ParseIdentifierList();
+    
+    // Parse constructor: new(params) { ... }
+    std::unique_ptr<ConstructorAST> ParseConstructor();
+    
+    // Parse generic parameters: <T, U, V>
+    std::vector<std::string> ParseGenericParams();
+    
+    // Parse unsafe block: unsafe { ... }
+    std::unique_ptr<ExprAST> ParseUnsafeBlock();
     
     // Helper to check if we are at EOF
     bool isEOF();

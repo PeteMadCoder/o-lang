@@ -1,0 +1,16 @@
+// This is a demonstration of the safety context
+// The actual unsafe operations will be implemented in later tasks
+
+fn testSafetyContext() -> int {
+    // This would be safe code
+    var x = 10;
+    
+    // Later: unsafe { *ptr = 5; } would be allowed
+    // But: *ptr = 5; would trigger LogSafetyError
+    
+    return x;
+}
+
+fn main() -> int {
+    return testSafetyContext();
+}

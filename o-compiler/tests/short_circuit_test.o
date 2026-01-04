@@ -1,0 +1,28 @@
+fn putchar(int c) -> int;
+
+fn side_effect() -> int {
+    putchar(88); // Print 'X' to show this was called
+    return 1;
+}
+
+fn main() -> int {
+    putchar(65); // Print 'A'
+    
+    // This should NOT call side_effect() due to short-circuiting
+    var result1 = (false && side_effect());
+    
+    putchar(66); // Print 'B'
+    
+    // This should NOT call side_effect() due to short-circuiting  
+    var result2 = (true || side_effect());
+    
+    putchar(67); // Print 'C'
+    
+    // This SHOULD call side_effect()
+    var result3 = (true && side_effect());
+    
+    putchar(68); // Print 'D'
+    putchar(10); // Newline
+    
+    return 0;
+}

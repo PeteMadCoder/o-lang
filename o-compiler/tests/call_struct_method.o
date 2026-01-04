@@ -1,0 +1,12 @@
+struct Point {
+    int x, y;
+    
+    fn getValue() -> int {
+        return 123;
+    }
+}
+
+fn main() -> int {
+    var result = getValue();  // Call the struct method as a regular function
+    return result;
+}

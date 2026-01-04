@@ -11,17 +11,21 @@ enum class TokenType {
     Open, Virtual, Override, New, Shared, Unsafe, Match,
 
     // Types
-    TypeInt, TypeFloat, TypeBool, TypeVoid,
+    TypeInt, TypeFloat, TypeBool, TypeVoid, TypeChar, TypeByte,
 
     // Identifiers & Literals
-    Identifier, Integer, Float, StringLit, True, False,
+    Identifier, Integer, Float, StringLit, CharLit, True, False,
 
     // Operators & Punctuation
     Plus, Minus, Star, Slash, Equal,           // + - * / =
     EqualEqual, NotEqual, Less, Greater,       // == != < >
+    LessEqual, GreaterEqual,                   // <= >=
+    LogicalAnd, LogicalOr,                     // && ||
+    Ampersand,                                 // &
     Arrow,                                     // ->
     LParen, RParen, LBrace, RBrace,            // ( ) { }
     LBracket, RBracket,                        // [ ]
+    LAngle, RAngle,                            // < > (for generics)
     Semicolon, Colon, Comma, Dot               // ; : , .
 };
 
@@ -50,4 +54,6 @@ private:
     Token atom(TokenType type);
     Token identifier(); // Handles keywords vs identifiers
     Token number();
+    Token character(); // Handle character literals
+    Token string(); // Handle string literals
 };

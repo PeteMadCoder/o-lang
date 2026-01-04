@@ -6,10 +6,13 @@
 static std::unordered_map<std::string, TokenType> keywords = {
     {"fn", TokenType::Fn}, {"var", TokenType::Var}, {"mut", TokenType::Mut},
     {"return", TokenType::Return}, {"if", TokenType::If}, {"else", TokenType::Else},
-    {"while", TokenType::While}, {"class", TokenType::Class},
-    {"module", TokenType::Module}, {"import", TokenType::Import},
+    {"while", TokenType::While}, {"class", TokenType::Class}, {"struct", TokenType::Struct},
+    {"module", TokenType::Module}, {"import", TokenType::Import}, {"new", TokenType::New},
+    {"unsafe", TokenType::Unsafe},
     {"int", TokenType::TypeInt}, {"float", TokenType::TypeFloat},
-    {"bool", TokenType::TypeBool}, {"true", TokenType::True}, {"false", TokenType::False}
+    {"bool", TokenType::TypeBool}, {"void", TokenType::TypeVoid},
+    {"char", TokenType::TypeChar}, {"byte", TokenType::TypeByte},
+    {"true", TokenType::True}, {"false", TokenType::False}
 };
 
 Lexer::Lexer(const std::string& source) : src(source) {}
@@ -82,6 +85,47 @@ Token Lexer::number() {
     return Token{isFloat ? TokenType::Float : TokenType::Integer, text, line, col};
 }
 
+Token Lexer::character() {
+    size_t start = pos - 1; // We already consumed the '
+    
+    if (peek() == '\\') {
+        advance(); // consume '\'
+        char escaped = peek();
+        advance(); // consume escaped char
+        if (peek() != '\'') return Token{TokenType::EoF, "INVALID_CHAR", line, col};
+        advance(); // consume closing '
+        
+        std::string text = src.substr(start, pos - start);
+        return Token{TokenType::CharLit, text, line, col};
+    } else {
+        advance(); // consume character
+        if (peek() != '\'') return Token{TokenType::EoF, "INVALID_CHAR", line, col};
+        advance(); // consume closing '
+        
+        std::string text = src.substr(start, pos - start);
+        return Token{TokenType::CharLit, text, line, col};
+    }
+}
+
+Token Lexer::string() {
+    size_t start = pos - 1; // We already consumed the "
+    
+    while (peek() != '"' && peek() != '\0') {
+        if (peek() == '\\') {
+            advance(); // consume '\'
+            advance(); // consume escaped char
+        } else {
+            advance();
+        }
+    }
+    
+    if (peek() != '"') return Token{TokenType::EoF, "UNTERMINATED_STRING", line, col};
+    advance(); // consume closing "
+    
+    std::string text = src.substr(start, pos - start);
+    return Token{TokenType::StringLit, text, line, col};
+}
+
 Token Lexer::next_token() {
     skip_whitespace();
     
@@ -103,8 +147,20 @@ Token Lexer::next_token() {
         case '+': return atom(TokenType::Plus);
         case '*': return atom(TokenType::Star);
         case '/': return atom(TokenType::Slash); // Added Slash
-        case '<': return atom(TokenType::Less);  // Added Less
-        case '>': return atom(TokenType::Greater);
+        case '<': 
+            if (peek() == '=') { advance(); return Token{TokenType::LessEqual, "<=", line, col}; }
+            return atom(TokenType::Less);
+        case '>': 
+            if (peek() == '=') { advance(); return Token{TokenType::GreaterEqual, ">=", line, col}; }
+            return atom(TokenType::Greater);
+        case '&':
+            if (peek() == '&') { advance(); return Token{TokenType::LogicalAnd, "&&", line, col}; }
+            return atom(TokenType::Ampersand);
+        case '|':
+            if (peek() == '|') { advance(); return Token{TokenType::LogicalOr, "||", line, col}; }
+            return Token{TokenType::EoF, "UNKNOWN", line, col}; // Single | not supported yet
+        case '\'': return character(); // Handle character literals
+        case '"': return string(); // Handle string literals
         
         // Multi-character tokens
         case '-':
@@ -113,6 +169,9 @@ Token Lexer::next_token() {
         case '=':
             if (peek() == '=') { advance(); return Token{TokenType::EqualEqual, "==", line, col}; }
             return atom(TokenType::Equal);
+        case '!':
+            if (peek() == '=') { advance(); return Token{TokenType::NotEqual, "!=", line, col}; }
+            return Token{TokenType::EoF, "UNKNOWN", line, col}; // Single ! not supported yet
             
         default:
             // For now, return EOF on unknown char to avoid infinite loop, 

@@ -1,0 +1,6 @@
+fn main() -> int {
+    var str1 = "Hello";
+    var str2 = "World\n";
+    var str3 = "Test \"quotes\" and \\backslash";
+    return 0;
+}

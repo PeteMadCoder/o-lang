@@ -1,0 +1,23 @@
+struct Point {
+    int x, y;
+    
+    new(int x, int y) {
+        var temp = x + y;
+    }
+    
+    fn getValue() -> int {
+        return 42;
+    }
+}
+
+struct SimpleGeneric<T> {
+    int placeholder;
+    
+    new() {
+        var temp = 0;
+    }
+}
+
+fn main() -> int {
+    return 0;
+}

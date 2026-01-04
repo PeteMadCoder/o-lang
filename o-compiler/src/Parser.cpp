@@ -1,5 +1,6 @@
 #include "Parser.h"
 #include <iostream>
+#include <cassert>
 
 // Operator Precedence Table
 static std::map<char, int> BinopPrecedence = {
@@ -13,6 +14,10 @@ static std::map<char, int> BinopPrecedence = {
 
 Parser::Parser(Lexer& lex) : lexer(lex) {
     getNextToken(); // Prime the pump
+    
+    // Verify initial safety state
+    assert(unsafeDepth == 0);
+    assert(!isInUnsafeContext());
 }
 
 void Parser::getNextToken() {
@@ -20,12 +25,24 @@ void Parser::getNextToken() {
 }
 
 int Parser::GetTokPrecedence() {
+    // Logical operators (lowest precedence)
+    if (curTok.type == TokenType::LogicalOr) return 5;
+    if (curTok.type == TokenType::LogicalAnd) return 6;
+    
+    // Comparison operators
+    if (curTok.type == TokenType::EqualEqual) return 10;
+    if (curTok.type == TokenType::NotEqual) return 10;
+    if (curTok.type == TokenType::Less) return 10;
+    if (curTok.type == TokenType::Greater) return 10;
+    if (curTok.type == TokenType::LessEqual) return 10;
+    if (curTok.type == TokenType::GreaterEqual) return 10;
+    
+    // Arithmetic operators
     if (curTok.type == TokenType::Plus) return 20;
     if (curTok.type == TokenType::Minus) return 20;
     if (curTok.type == TokenType::Star) return 40;
     if (curTok.type == TokenType::Slash) return 40;
-    if (curTok.type == TokenType::Less) return 10;
-    if (curTok.type == TokenType::Greater) return 10;
+    
     return -1;
 }
 
@@ -41,20 +58,96 @@ std::unique_ptr<PrototypeAST> Parser::LogErrorP(const char* str) {
     return nullptr;
 }
 
+void Parser::LogSafetyError(const char* str) {
+    fprintf(stderr, "Safety Error: %s\n", str);
+    exit(1); // Abort compilation immediately
+}
+
 // --- Expression Parsing ---
 
 OType Parser::ParseType() {
-    if (curTok.type == TokenType::TypeInt) { getNextToken(); return OType::Int; }
-    if (curTok.type == TokenType::TypeFloat) { getNextToken(); return OType::Float; }
-    if (curTok.type == TokenType::TypeBool) { getNextToken(); return OType::Bool; }
-    return OType::Void;
+    int pointerDepth = 0;
+    
+    // Count leading asterisks for pointer depth
+    while (curTok.type == TokenType::Star) {
+        pointerDepth++;
+        getNextToken(); // eat '*'
+    }
+    
+    // Parse base type
+    OType baseType;
+    if (curTok.type == TokenType::TypeInt) { 
+        getNextToken(); 
+        baseType = OType(BaseType::Int); 
+    } else if (curTok.type == TokenType::TypeFloat) { 
+        getNextToken(); 
+        baseType = OType(BaseType::Float); 
+    } else if (curTok.type == TokenType::TypeBool) { 
+        getNextToken(); 
+        baseType = OType(BaseType::Bool); 
+    } else if (curTok.type == TokenType::TypeVoid) { 
+        getNextToken(); 
+        baseType = OType(BaseType::Void); 
+    } else if (curTok.type == TokenType::TypeChar) { 
+        getNextToken(); 
+        baseType = OType(BaseType::Char); 
+    } else if (curTok.type == TokenType::TypeByte) { 
+        getNextToken(); 
+        baseType = OType(BaseType::Byte); 
+    } else if (curTok.type == TokenType::Identifier) {
+        // Check for user-defined struct types
+        std::string typeName = curTok.text;
+        if (TypeRegistry::getInstance().hasStruct(typeName)) {
+            getNextToken();
+            baseType = OType(BaseType::Struct, 0, typeName);
+        } else {
+            baseType = OType(BaseType::Void);
+        }
+    } else {
+        baseType = OType(BaseType::Void);
+    }
+    
+    // Apply pointer depth
+    baseType.pointerDepth = pointerDepth;
+    return baseType;
 }
 
 std::unique_ptr<ExprAST> Parser::ParseNumberExpr() {
     bool isFloat = (curTok.type == TokenType::Float);
     double val = std::stod(curTok.text);
     getNextToken();
-    return std::make_unique<NumberExprAST>(val, isFloat ? OType::Float : OType::Int);
+    return std::make_unique<NumberExprAST>(val, isFloat ? OType(BaseType::Float) : OType(BaseType::Int));
+}
+
+std::unique_ptr<ExprAST> Parser::ParseCharExpr() {
+    std::string charText = curTok.text;
+    char val;
+    
+    if (charText.length() == 3) { // 'a'
+        val = charText[1];
+    } else if (charText.length() == 4 && charText[1] == '\\') { // '\n'
+        switch (charText[2]) {
+            case 'n': val = '\n'; break;
+            case 't': val = '\t'; break;
+            case 'r': val = '\r'; break;
+            case '\\': val = '\\'; break;
+            case '\'': val = '\''; break;
+            default: val = charText[2]; break;
+        }
+    } else {
+        val = 0; // Error case
+    }
+    
+    getNextToken();
+    return std::make_unique<NumberExprAST>((double)val, OType(BaseType::Char));
+}
+
+std::unique_ptr<ExprAST> Parser::ParseStringExpr() {
+    std::string strText = curTok.text;
+    // Remove quotes: "hello" -> hello
+    std::string content = strText.substr(1, strText.length() - 2);
+    getNextToken();
+    return std::make_unique<StringExprAST>(content);
 }
 
 std::unique_ptr<ExprAST> Parser::ParseParenExpr() {
@@ -145,12 +238,61 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary() {
         case TokenType::True:       getNextToken(); return std::make_unique<BoolExprAST>(true);
         case TokenType::False:      getNextToken(); return std::make_unique<BoolExprAST>(false);
         case TokenType::If:         return ParseIfExpr();
+        case TokenType::Unsafe:     return ParseUnsafeBlock();
         case TokenType::Identifier: return ParseIdentifierExpr();
         case TokenType::Integer:    return ParseNumberExpr();
         case TokenType::Float:      return ParseNumberExpr();
+        case TokenType::CharLit:    return ParseCharExpr();
+        case TokenType::StringLit:  return ParseStringExpr();
         case TokenType::LParen:     return ParseParenExpr();
         default: return LogError("unknown token when expecting an expression");
     }
+}
+
+std::unique_ptr<ExprAST> Parser::ParsePostfix() {
+    auto Expr = ParsePrimary();
+    if (!Expr) return nullptr;
+    
+    while (curTok.type == TokenType::Dot) {
+        getNextToken(); // eat '.'
+        
+        if (curTok.type != TokenType::Identifier) {
+            return LogError("Expected field name after '.'");
+        }
+        
+        std::string FieldName = curTok.text;
+        getNextToken(); // eat field name
+        
+        Expr = std::make_unique<MemberAccessAST>(std::move(Expr), FieldName);
+    }
+    
+    return Expr;
+}
+
+std::unique_ptr<ExprAST> Parser::ParseUnary() {
+    // Handle address-of operator
+    if (curTok.type == TokenType::Ampersand) {
+        getNextToken(); // eat '&'
+        auto Operand = ParseUnary(); // Allow chaining: &(&x)
+        if (!Operand) return nullptr;
+        return std::make_unique<AddressOfExprAST>(std::move(Operand));
+    }
+    
+    // Handle dereference operator (unsafe operation)
+    if (curTok.type == TokenType::Star) {
+        // Safety check: dereference only allowed in unsafe blocks
+        if (unsafeDepth == 0) {
+            LogSafetyError("Dereference is only allowed inside unsafe blocks");
+        }
+        
+        getNextToken(); // eat '*'
+        auto Operand = ParseUnary(); // Allow chaining: *(*ptr)
+        if (!Operand) return nullptr;
+        return std::make_unique<DerefExprAST>(std::move(Operand));
+    }
+    
+    // Otherwise, parse postfix expression
+    return ParsePostfix();
 }
 
 std::unique_ptr<ExprAST> Parser::ParseBinOpRHS(int ExprPrec, std::unique_ptr<ExprAST> LHS) {
@@ -161,9 +303,10 @@ std::unique_ptr<ExprAST> Parser::ParseBinOpRHS(int ExprPrec, std::unique_ptr<Exp
             return LHS;
 
         char BinOp = curTok.text[0]; 
+        std::string BinOpStr = curTok.text; // Store full operator string
         getNextToken(); // eat binop
 
-        auto RHS = ParsePrimary();
+        auto RHS = ParseUnary();
         if (!RHS) return nullptr;
 
         int NextPrec = GetTokPrecedence();
@@ -172,12 +315,12 @@ std::unique_ptr<ExprAST> Parser::ParseBinOpRHS(int ExprPrec, std::unique_ptr<Exp
             if (!RHS) return nullptr;
         }
 
-        LHS = std::make_unique<BinaryExprAST>(BinOp, std::move(LHS), std::move(RHS));
+        LHS = std::make_unique<BinaryExprAST>(BinOpStr, std::move(LHS), std::move(RHS));
     }
 }
 
 std::unique_ptr<ExprAST> Parser::ParseExpression() {
-    auto LHS = ParsePrimary();
+    auto LHS = ParseUnary();
     if (!LHS) return nullptr;
     return ParseBinOpRHS(0, std::move(LHS));
 }
@@ -295,8 +438,11 @@ std::unique_ptr<PrototypeAST> Parser::ParsePrototype() {
     getNextToken();
 
     std::vector<std::pair<std::string, OType>> Args;
-    while (curTok.type == TokenType::TypeInt || curTok.type == TokenType::TypeFloat) {
-        // Parse "Type Name"
+    while (curTok.type == TokenType::TypeInt || curTok.type == TokenType::TypeFloat || 
+           curTok.type == TokenType::TypeBool || curTok.type == TokenType::TypeVoid ||
+           curTok.type == TokenType::TypeChar || curTok.type == TokenType::TypeByte ||
+           curTok.type == TokenType::Star || curTok.type == TokenType::Identifier) {
+        // Parse "Type Name" (including pointer types like *int, **float)
         OType ArgType = ParseType();
         
         if (curTok.type != TokenType::Identifier) return LogErrorP("Expected arg name");
@@ -311,7 +457,7 @@ std::unique_ptr<PrototypeAST> Parser::ParsePrototype() {
     getNextToken();
 
     // Parse Return Type
-    OType RetType = OType::Void;
+    OType RetType = OType(BaseType::Void);
     if (curTok.type == TokenType::Arrow) {
         getNextToken(); // eat ->
         RetType = ParseType(); // Parse "int" or "float"
@@ -336,6 +482,214 @@ std::unique_ptr<FunctionAST> Parser::ParseDefinition() {
         return std::make_unique<FunctionAST>(std::move(Proto), std::move(Body));
     }
     return nullptr;
+}
+
+std::unique_ptr<StructDeclAST> Parser::ParseStruct() {
+    if (curTok.type != TokenType::Struct) return nullptr;
+    getNextToken(); // eat 'struct'
+    
+    if (curTok.type != TokenType::Identifier) {
+        LogError("Expected struct name");
+        return nullptr;
+    }
+    
+    std::string StructName = curTok.text;
+    getNextToken(); // eat struct name
+    
+    // Parse optional generic parameters
+    std::vector<std::string> GenericParams = ParseGenericParams();
+    
+    if (curTok.type != TokenType::LBrace) {
+        LogError("Expected '{'");
+        return nullptr;
+    }
+    getNextToken(); // eat '{'
+    
+    std::vector<std::pair<std::string, OType>> Fields;
+    std::vector<std::unique_ptr<FunctionAST>> Methods;
+    std::vector<std::unique_ptr<ConstructorAST>> Constructors;
+    
+    while (curTok.type != TokenType::RBrace && curTok.type != TokenType::EoF) {
+        if (curTok.type == TokenType::Fn) {
+            // Parse method
+            auto method = ParseDefinition();
+            if (!method) {
+                LogError("Failed to parse struct method");
+                return nullptr;
+            }
+            Methods.push_back(std::move(method));
+        } else if (curTok.type == TokenType::New) {
+            // Parse constructor
+            auto constructor = ParseConstructor();
+            if (!constructor) {
+                LogError("Failed to parse struct constructor");
+                return nullptr;
+            }
+            Constructors.push_back(std::move(constructor));
+        } else {
+            // Parse field: Type IdentifierList;
+            OType FieldType = ParseType();
+            
+            std::vector<std::string> FieldNames = ParseIdentifierList();
+            if (FieldNames.empty()) {
+                LogError("Expected field name(s)");
+                return nullptr;
+            }
+            
+            if (curTok.type != TokenType::Semicolon) {
+                LogError("Expected ';' after field");
+                return nullptr;
+            }
+            getNextToken(); // eat ';'
+            
+            // Add all fields with the same type
+            for (const auto& fieldName : FieldNames) {
+                Fields.push_back({fieldName, FieldType});
+            }
+        }
+    }
+    
+    if (curTok.type != TokenType::RBrace) {
+        LogError("Expected '}'");
+        return nullptr;
+    }
+    getNextToken(); // eat '}'
+    
+    return std::make_unique<StructDeclAST>(StructName, std::move(GenericParams), std::move(Fields), std::move(Methods), std::move(Constructors));
+}
+
+bool Parser::ParseTopLevel() {
+    if (curTok.type == TokenType::Struct) {
+        auto structAST = ParseStruct();
+        if (structAST) {
+            structAST->codegen(); // Register the struct type
+            return true;
+        }
+        return false;
+    } else if (curTok.type == TokenType::Fn) {
+        auto funcAST = ParseDefinition();
+        if (funcAST) {
+            auto *IR = funcAST->codegen();
+            return IR != nullptr;
+        }
+        return false;
+    }
+    return false;
+}
+
+std::vector<std::string> Parser::ParseIdentifierList() {
+    std::vector<std::string> identifiers;
+    
+    if (curTok.type != TokenType::Identifier) return identifiers;
+    
+    identifiers.push_back(curTok.text);
+    getNextToken(); // eat first identifier
+    
+    while (curTok.type == TokenType::Comma) {
+        getNextToken(); // eat ','
+        
+        if (curTok.type != TokenType::Identifier) {
+            LogError("Expected identifier after ','");
+            return identifiers;
+        }
+        
+        identifiers.push_back(curTok.text);
+        getNextToken(); // eat identifier
+    }
+    
+    return identifiers;
+}
+
+std::unique_ptr<ConstructorAST> Parser::ParseConstructor() {
+    if (curTok.type != TokenType::New) return nullptr;
+    getNextToken(); // eat 'new'
+    
+    if (curTok.type != TokenType::LParen) {
+        LogError("Expected '(' after 'new'");
+        return nullptr;
+    }
+    getNextToken(); // eat '('
+    
+    std::vector<std::pair<std::string, OType>> Params;
+    
+    while (curTok.type != TokenType::RParen && curTok.type != TokenType::EoF) {
+        // Parse parameter: Type Name
+        OType ParamType = ParseType();
+        
+        if (curTok.type != TokenType::Identifier) {
+            LogError("Expected parameter name");
+            return nullptr;
+        }
+        
+        std::string ParamName = curTok.text;
+        getNextToken(); // eat param name
+        
+        Params.push_back({ParamName, ParamType});
+        
+        if (curTok.type == TokenType::Comma) {
+            getNextToken(); // eat ','
+        }
+    }
+    
+    if (curTok.type != TokenType::RParen) {
+        LogError("Expected ')'");
+        return nullptr;
+    }
+    getNextToken(); // eat ')'
+    
+    // Parse body
+    auto Body = ParseBlock();
+    if (!Body) {
+        LogError("Expected constructor body");
+        return nullptr;
+    }
+    
+    return std::make_unique<ConstructorAST>(std::move(Params), std::move(Body));
+}
+
+std::vector<std::string> Parser::ParseGenericParams() {
+    std::vector<std::string> genericParams;
+    
+    if (curTok.type != TokenType::Less) return genericParams;
+    getNextToken(); // eat '<'
+    
+    while (curTok.type != TokenType::Greater && curTok.type != TokenType::EoF) {
+        if (curTok.type != TokenType::Identifier) {
+            LogError("Expected generic parameter name");
+            return genericParams;
+        }
+        
+        genericParams.push_back(curTok.text);
+        getNextToken(); // eat identifier
+        
+        if (curTok.type == TokenType::Comma) {
+            getNextToken(); // eat ','
+        }
+    }
+    
+    if (curTok.type != TokenType::Greater) {
+        LogError("Expected '>' after generic parameters");
+        return genericParams;
+    }
+    getNextToken(); // eat '>'
+    
+    return genericParams;
+}
+
+std::unique_ptr<ExprAST> Parser::ParseUnsafeBlock() {
+    if (curTok.type != TokenType::Unsafe) return nullptr;
+    getNextToken(); // eat 'unsafe'
+    
+    // Enter unsafe context
+    enterUnsafe();
+    
+    // Parse the block
+    auto Block = ParseBlock();
+    
+    // Exit unsafe context immediately after
+    exitUnsafe();
+    
+    return Block; // Return the block AST - no special unsafe AST needed
 }
 
 bool Parser::isEOF() { return curTok.type == TokenType::EoF; }

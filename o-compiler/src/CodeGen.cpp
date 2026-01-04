@@ -6,6 +6,7 @@ std::unique_ptr<llvm::LLVMContext> TheContext;
 std::unique_ptr<llvm::IRBuilder<>> Builder;
 std::unique_ptr<llvm::Module> TheModule;
 std::map<std::string, llvm::AllocaInst *> NamedValues;
+std::unordered_map<std::string, llvm::StructType*> StructTypes;
 
 // Initialize the LLVM infrastructure
 void InitializeModuleAndPassManager() {
@@ -19,11 +20,31 @@ void LogError(const char *Str) {
 }
 
 // Helper to translate OType to llvm::Type
-llvm::Type* getLLVMType(OType t) {
-    if (t == OType::Int) return llvm::Type::getInt32Ty(*TheContext);
-    if (t == OType::Float) return llvm::Type::getDoubleTy(*TheContext);
-    if (t == OType::Bool) return llvm::Type::getInt1Ty(*TheContext);
-    return llvm::Type::getVoidTy(*TheContext);
+llvm::Type* getLLVMType(const OType& t) {
+    llvm::Type* baseType;
+    
+    switch (t.base) {
+        case BaseType::Int: baseType = llvm::Type::getInt32Ty(*TheContext); break;
+        case BaseType::Float: baseType = llvm::Type::getDoubleTy(*TheContext); break;
+        case BaseType::Bool: baseType = llvm::Type::getInt1Ty(*TheContext); break;
+        case BaseType::Char: baseType = llvm::Type::getInt8Ty(*TheContext); break;
+        case BaseType::Byte: baseType = llvm::Type::getInt8Ty(*TheContext); break;
+        case BaseType::Struct: 
+            if (StructTypes.find(t.structName) != StructTypes.end()) {
+                baseType = StructTypes[t.structName];
+            } else {
+                baseType = llvm::Type::getVoidTy(*TheContext);
+            }
+            break;
+        default: baseType = llvm::Type::getVoidTy(*TheContext); break;
+    }
+    
+    // Apply pointer depth
+    for (int i = 0; i < t.pointerDepth; i++) {
+        baseType = llvm::PointerType::get(baseType, 0);
+    }
+    
+    return baseType;
 }
 
 /// CreateEntryBlockAlloca - Create an alloca instruction in the entry block of the function.
@@ -40,9 +61,36 @@ llvm::Value *BoolExprAST::codegen() {
     return llvm::ConstantInt::get(*TheContext, llvm::APInt(1, Val ? 1 : 0, false));
 }
 
+llvm::Value *StringExprAST::codegen() {
+    // Create global constant array for string
+    std::string content = Val + '\0'; // Null-terminate
+    llvm::Constant *strConstant = llvm::ConstantDataArray::getString(*TheContext, content, false);
+    
+    // Create global variable
+    llvm::GlobalVariable *globalStr = new llvm::GlobalVariable(
+        *TheModule,
+        strConstant->getType(),
+        true, // isConstant
+        llvm::GlobalValue::PrivateLinkage,
+        strConstant,
+        "str"
+    );
+    
+    // Return pointer to first character (i8*)
+    llvm::Value *zero = llvm::ConstantInt::get(llvm::Type::getInt32Ty(*TheContext), 0);
+    return Builder->CreateInBoundsGEP(
+        strConstant->getType(),
+        globalStr,
+        {zero, zero},
+        "strptr"
+    );
+}
+
 llvm::Value *NumberExprAST::codegen() {
-    if (Type == OType::Float) {
+    if (Type.base == BaseType::Float) {
         return llvm::ConstantFP::get(*TheContext, llvm::APFloat(Val));
+    } else if (Type.base == BaseType::Char || Type.base == BaseType::Byte) {
+        return llvm::ConstantInt::get(*TheContext, llvm::APInt(8, (int)Val, false));
     } else {
         return llvm::ConstantInt::get(*TheContext, llvm::APInt(32, (int)Val, true));
     }
@@ -55,6 +103,15 @@ llvm::Value *VariableExprAST::codegen() {
         return nullptr;
     }
     return Builder->CreateLoad(A->getAllocatedType(), A, Name.c_str());
+}
+
+llvm::Value *VariableExprAST::codegenAddress() {
+    llvm::AllocaInst *A = NamedValues[Name];
+    if (!A) {
+        LogError("Unknown variable name");
+        return nullptr;
+    }
+    return A; // Return the alloca directly (address) without loading
 }
 
 llvm::Value *VarDeclExprAST::codegen() {
@@ -98,9 +155,81 @@ llvm::Value *ReturnExprAST::codegen() {
 }
 
 llvm::Value *BinaryExprAST::codegen() {
+    // Handle short-circuiting logical operators
+    if (Op == "&&" || Op == "||") {
+        llvm::Function *TheFunction = Builder->GetInsertBlock()->getParent();
+        
+        llvm::BasicBlock *LHSBlock = Builder->GetInsertBlock();
+        llvm::BasicBlock *RHSBlock = llvm::BasicBlock::Create(*TheContext, "rhs", TheFunction);
+        llvm::BasicBlock *MergeBlock = llvm::BasicBlock::Create(*TheContext, "merge", TheFunction);
+        
+        // Evaluate LHS
+        llvm::Value *L = LHS->codegen();
+        if (!L) return nullptr;
+        
+        // Convert to boolean if needed
+        if (!L->getType()->isIntegerTy(1)) {
+            if (L->getType()->isDoubleTy()) {
+                L = Builder->CreateFCmpONE(L, llvm::ConstantFP::get(*TheContext, llvm::APFloat(0.0)), "tobool");
+            } else {
+                L = Builder->CreateICmpNE(L, llvm::ConstantInt::get(L->getType(), 0), "tobool");
+            }
+        }
+        
+        if (Op == "&&") {
+            // For &&: if LHS is false, skip RHS
+            Builder->CreateCondBr(L, RHSBlock, MergeBlock);
+        } else { // ||
+            // For ||: if LHS is true, skip RHS
+            Builder->CreateCondBr(L, MergeBlock, RHSBlock);
+        }
+        
+        // RHS Block
+        Builder->SetInsertPoint(RHSBlock);
+        llvm::Value *R = RHS->codegen();
+        if (!R) return nullptr;
+        
+        // Convert RHS to boolean if needed
+        if (!R->getType()->isIntegerTy(1)) {
+            if (R->getType()->isDoubleTy()) {
+                R = Builder->CreateFCmpONE(R, llvm::ConstantFP::get(*TheContext, llvm::APFloat(0.0)), "tobool");
+            } else {
+                R = Builder->CreateICmpNE(R, llvm::ConstantInt::get(R->getType(), 0), "tobool");
+            }
+        }
+        
+        Builder->CreateBr(MergeBlock);
+        RHSBlock = Builder->GetInsertBlock(); // Update in case RHS created new blocks
+        
+        // Merge Block
+        Builder->SetInsertPoint(MergeBlock);
+        llvm::PHINode *PHI = Builder->CreatePHI(llvm::Type::getInt1Ty(*TheContext), 2, "logictmp");
+        
+        if (Op == "&&") {
+            PHI->addIncoming(llvm::ConstantInt::get(llvm::Type::getInt1Ty(*TheContext), 0), LHSBlock); // false from LHS
+            PHI->addIncoming(R, RHSBlock); // RHS result
+        } else { // ||
+            PHI->addIncoming(llvm::ConstantInt::get(llvm::Type::getInt1Ty(*TheContext), 1), LHSBlock); // true from LHS
+            PHI->addIncoming(R, RHSBlock); // RHS result
+        }
+        
+        return PHI;
+    }
+    
+    // Regular binary operators
     llvm::Value *L = LHS->codegen();
     llvm::Value *R = RHS->codegen();
     if (!L || !R) return nullptr;
+
+    // Handle type promotion: char/byte to int for arithmetic
+    if (L->getType()->isIntegerTy(8) && R->getType()->isIntegerTy(32)) {
+        L = Builder->CreateZExt(L, llvm::Type::getInt32Ty(*TheContext), "promote");
+    } else if (L->getType()->isIntegerTy(32) && R->getType()->isIntegerTy(8)) {
+        R = Builder->CreateZExt(R, llvm::Type::getInt32Ty(*TheContext), "promote");
+    } else if (L->getType()->isIntegerTy(8) && R->getType()->isIntegerTy(8)) {
+        L = Builder->CreateZExt(L, llvm::Type::getInt32Ty(*TheContext), "promote");
+        R = Builder->CreateZExt(R, llvm::Type::getInt32Ty(*TheContext), "promote");
+    }
 
     if (L->getType() != R->getType()) {
         LogError("Type mismatch in binary expression");
@@ -109,28 +238,29 @@ llvm::Value *BinaryExprAST::codegen() {
 
     bool isFloat = L->getType()->isDoubleTy();
 
-    switch (Op) {
-        case '+': 
-            return isFloat ? Builder->CreateFAdd(L, R, "addtmp") 
-                           : Builder->CreateAdd(L, R, "addtmp");
-        case '-': 
-            return isFloat ? Builder->CreateFSub(L, R, "subtmp") 
-                           : Builder->CreateSub(L, R, "subtmp");
-        case '*': 
-            return isFloat ? Builder->CreateFMul(L, R, "multmp") 
-                           : Builder->CreateMul(L, R, "multmp");
-        case '/': 
-            return isFloat ? Builder->CreateFDiv(L, R, "divtmp") 
-                           : Builder->CreateSDiv(L, R, "divtmp");
-        case '<':
-             return isFloat ? Builder->CreateFCmpULT(L, R, "cmptmp")
-                            : Builder->CreateICmpULT(L, R, "cmptmp");
-        case '>':
-             return isFloat ? Builder->CreateFCmpOGT(L, R, "cmptmp")
-                            : Builder->CreateICmpSGT(L, R, "cmptmp");
-        default:
-            return nullptr;
+    if (Op == "+") {
+        return isFloat ? Builder->CreateFAdd(L, R, "addtmp") : Builder->CreateAdd(L, R, "addtmp");
+    } else if (Op == "-") {
+        return isFloat ? Builder->CreateFSub(L, R, "subtmp") : Builder->CreateSub(L, R, "subtmp");
+    } else if (Op == "*") {
+        return isFloat ? Builder->CreateFMul(L, R, "multmp") : Builder->CreateMul(L, R, "multmp");
+    } else if (Op == "/") {
+        return isFloat ? Builder->CreateFDiv(L, R, "divtmp") : Builder->CreateSDiv(L, R, "divtmp");
+    } else if (Op == "<") {
+        return isFloat ? Builder->CreateFCmpOLT(L, R, "cmptmp") : Builder->CreateICmpSLT(L, R, "cmptmp");
+    } else if (Op == ">") {
+        return isFloat ? Builder->CreateFCmpOGT(L, R, "cmptmp") : Builder->CreateICmpSGT(L, R, "cmptmp");
+    } else if (Op == "<=") {
+        return isFloat ? Builder->CreateFCmpOLE(L, R, "cmptmp") : Builder->CreateICmpSLE(L, R, "cmptmp");
+    } else if (Op == ">=") {
+        return isFloat ? Builder->CreateFCmpOGE(L, R, "cmptmp") : Builder->CreateICmpSGE(L, R, "cmptmp");
+    } else if (Op == "==") {
+        return isFloat ? Builder->CreateFCmpOEQ(L, R, "cmptmp") : Builder->CreateICmpEQ(L, R, "cmptmp");
+    } else if (Op == "!=") {
+        return isFloat ? Builder->CreateFCmpONE(L, R, "cmptmp") : Builder->CreateICmpNE(L, R, "cmptmp");
     }
+    
+    return nullptr;
 }
 
 llvm::Value *CallExprAST::codegen() {
@@ -311,5 +441,152 @@ llvm::Function *FunctionAST::codegen() {
     }
 
     TheFunction->eraseFromParent();
+    return nullptr;
+}
+
+void StructDeclAST::codegen() {
+    // Skip codegen for generic structs - they need to be instantiated first
+    if (isGeneric()) {
+        // For now, just register the generic struct template
+        // Full generic instantiation would be implemented later
+        return;
+    }
+    
+    // Convert fields to LLVM types
+    std::vector<llvm::Type*> fieldTypes;
+    std::vector<FieldInfo> fieldInfos;
+    
+    size_t offset = 0;
+    for (const auto& field : Fields) {
+        llvm::Type* fieldType = getLLVMType(field.second);
+        if (!fieldType) return; // Error
+        
+        fieldTypes.push_back(fieldType);
+        
+        FieldInfo info;
+        info.name = field.first;
+        info.type = field.second;
+        info.offset = offset;
+        fieldInfos.push_back(info);
+        
+        // Simple offset calculation (no padding for now)
+        if (field.second.base == BaseType::Int || field.second.base == BaseType::Float) offset += 4;
+        else if (field.second.base == BaseType::Char || field.second.base == BaseType::Byte || field.second.base == BaseType::Bool) offset += 1;
+        else offset += 8; // pointers and other types
+    }
+    
+    // Create LLVM struct type
+    llvm::StructType* structType = llvm::StructType::create(*TheContext, fieldTypes, Name);
+    StructTypes[Name] = structType;
+    
+    // Register in type registry
+    TypeRegistry::getInstance().registerStruct(Name, fieldInfos);
+    
+    // Generate code for methods
+    for (auto& method : Methods) {
+        method->codegen();
+    }
+    
+    // Generate code for constructors
+    for (auto& constructor : Constructors) {
+        constructor->codegen(Name);
+    }
+}
+
+llvm::Function *ConstructorAST::codegen(const std::string& structName) {
+    // Create constructor function name: StructName_new
+    std::string funcName = structName + "_new";
+    
+    // Convert parameters to LLVM types
+    std::vector<llvm::Type*> paramTypes;
+    std::vector<std::string> paramNames;
+    
+    for (const auto& param : Params) {
+        paramTypes.push_back(getLLVMType(param.second));
+        paramNames.push_back(param.first);
+    }
+    
+    // Constructor returns a pointer to the struct
+    llvm::Type* structType = StructTypes[structName];
+    llvm::Type* returnType = llvm::PointerType::get(structType, 0);
+    
+    // Create function type
+    llvm::FunctionType* funcType = llvm::FunctionType::get(returnType, paramTypes, false);
+    
+    // Create function
+    llvm::Function* func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, funcName, TheModule.get());
+    
+    // Create basic block
+    llvm::BasicBlock* BB = llvm::BasicBlock::Create(*TheContext, "entry", func);
+    Builder->SetInsertPoint(BB);
+    
+    // Set parameter names and create allocas
+    std::map<std::string, llvm::AllocaInst*> oldNamedValues = NamedValues;
+    NamedValues.clear();
+    
+    auto argIt = func->arg_begin();
+    for (size_t i = 0; i < paramNames.size(); ++i, ++argIt) {
+        argIt->setName(paramNames[i]);
+        llvm::AllocaInst* alloca = CreateEntryBlockAlloca(func, paramNames[i], paramTypes[i]);
+        Builder->CreateStore(&*argIt, alloca);
+        NamedValues[paramNames[i]] = alloca;
+    }
+    
+    // Generate constructor body
+    Body->codegen();
+    
+    // For now, return null pointer (proper struct allocation would go here)
+    Builder->CreateRet(llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(returnType)));
+    
+    // Restore old named values
+    NamedValues = oldNamedValues;
+    
+    return func;
+}
+
+llvm::Value *AddressOfExprAST::codegen() {
+    // Try to cast operand to VariableExprAST to get address
+    if (auto VarExpr = dynamic_cast<VariableExprAST*>(Operand.get())) {
+        return VarExpr->codegenAddress();
+    }
+    
+    // For now, only support address-of variables
+    LogError("Address-of operator only supports variables currently");
+    return nullptr;
+}
+
+llvm::Value *DerefExprAST::codegen() {
+    // RHS (Reading): Generate a load instruction on the pointer address
+    llvm::Value *PtrValue = Operand->codegen();
+    if (!PtrValue) return nullptr;
+    
+    // Load the value that the pointer points to
+    if (!PtrValue->getType()->isPointerTy()) {
+        LogError("Cannot dereference non-pointer type");
+        return nullptr;
+    }
+    
+    // For newer LLVM, we need to determine the pointee type differently
+    // For now, assume it's an i32 (this would need proper type tracking)
+    llvm::Type *pointeeType = llvm::Type::getInt32Ty(*TheContext);
+    return Builder->CreateLoad(pointeeType, PtrValue, "deref");
+}
+
+llvm::Value *DerefExprAST::codegenAddress() {
+    // LHS (Assignment): Return the pointer address for storing
+    llvm::Value *PtrValue = Operand->codegen();
+    if (!PtrValue) return nullptr;
+    
+    if (!PtrValue->getType()->isPointerTy()) {
+        LogError("Cannot dereference non-pointer type");
+        return nullptr;
+    }
+    
+    return PtrValue; // Return the pointer itself for assignment target
+}
+
+llvm::Value *MemberAccessAST::codegen() {
+    // For now, return a placeholder - this needs proper implementation
+    // with GEP instructions and type checking
     return nullptr;
 }
