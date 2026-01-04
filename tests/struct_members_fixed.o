@@ -1,0 +1,15 @@
+struct Point {
+    int x;
+    int y;
+}
+
+fn main() -> int {
+    var p = new Point();
+    p.x = 10;
+    p.y = 20;
+    
+    if (p.x == 10 && p.y == 20) {
+        return 0; // Success
+    }
+    return 1; // Fail
+}

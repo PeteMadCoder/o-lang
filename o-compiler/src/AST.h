@@ -157,6 +157,9 @@ public:
     
     // Optional: Get address for l-value usage (assignment, & operator)
     virtual llvm::Value *codegenAddress() { return nullptr; }
+
+    // Get the OType of the expression
+    virtual OType getOType() const { return OType(BaseType::Void); }
 };
 
 // 2a. Boolean Node
@@ -165,6 +168,7 @@ class BoolExprAST : public ExprAST {
 public:
     BoolExprAST(bool Val) : Val(Val) {}
     llvm::Value *codegen() override;
+    OType getOType() const override { return OType(BaseType::Bool); }
 };
 
 // 2b. While Loop Node
@@ -200,6 +204,7 @@ public:
     llvm::Value *codegen() override;
     OType getType() const { return Type; } // Type getter
     double getVal() const { return Val; } // Value getter
+    OType getOType() const override { return Type; }
 };
 
 /// StringExprAST - Expression class for string literals like "hello"
@@ -208,6 +213,7 @@ class StringExprAST : public ExprAST {
 public:
     StringExprAST(const std::string &Val) : Val(Val) {}
     llvm::Value *codegen() override;
+    OType getOType() const override { return OType(BaseType::Char, 1); } // char*
 };
 
 /// StructDeclAST - Represents a struct declaration
@@ -267,6 +273,8 @@ public:
     MemberAccessAST(std::unique_ptr<ExprAST> Object, const std::string &FieldName)
         : Object(std::move(Object)), FieldName(FieldName) {}
     llvm::Value *codegen() override;
+    llvm::Value *codegenAddress() override;
+    OType getOType() const override;
 };
 
 /// ConstructorAST - Represents a struct constructor
@@ -288,6 +296,7 @@ public:
     AddressOfExprAST(std::unique_ptr<ExprAST> Operand)
         : Operand(std::move(Operand)) {}
     llvm::Value *codegen() override;
+    OType getOType() const override;
 };
 
 /// DerefExprAST - Expression for dereferencing a pointer (*ptr)
@@ -297,7 +306,8 @@ public:
     DerefExprAST(std::unique_ptr<ExprAST> Operand)
         : Operand(std::move(Operand)) {}
     llvm::Value *codegen() override;
-    llvm::Value *codegenAddress(); // For LHS assignment: *ptr = value
+    llvm::Value *codegenAddress() override; // For LHS assignment: *ptr = value
+    OType getOType() const override;
 };
 
 /// NewExprAST - Expression for object instantiation (new ClassName(args))
@@ -308,6 +318,7 @@ public:
     NewExprAST(const std::string &ClassName, std::vector<std::unique_ptr<ExprAST>> Args)
         : ClassName(ClassName), Args(std::move(Args)) {}
     llvm::Value *codegen() override;
+    OType getOType() const override { return OType(BaseType::Struct, 1, ClassName); } // Returns pointer to struct
 };
 
 /// NewArrayExprAST - Expression for array allocation (new int[size])
@@ -318,6 +329,7 @@ public:
     NewArrayExprAST(OType ElementType, std::unique_ptr<ExprAST> Size)
         : ElementType(ElementType), Size(std::move(Size)) {}
     llvm::Value *codegen() override;
+    OType getOType() const override; // Returns slice type or array type? Slice usually.
 };
 
 /// IndexExprAST - Expression for array indexing (arr[index])
@@ -328,7 +340,8 @@ public:
     IndexExprAST(std::unique_ptr<ExprAST> Array, std::unique_ptr<ExprAST> Index)
         : Array(std::move(Array)), Index(std::move(Index)) {}
     llvm::Value *codegen() override;
-    llvm::Value *codegenAddress(); // For LHS assignment: arr[i] = value
+    llvm::Value *codegenAddress() override; // For LHS assignment: arr[i] = value
+    OType getOType() const override;
 };
 
 /// ArrayLiteralExprAST - Expression for array type literals (int[10])
@@ -339,6 +352,7 @@ public:
     ArrayLiteralExprAST(OType ElementType, int Size)
         : ElementType(ElementType), Size(Size) {}
     llvm::Value *codegen() override;
+    OType getOType() const override { return OType(ElementType.base, ElementType.pointerDepth, ElementType.structName, Size); }
 };
 
 /// ArrayInitExprAST - Expression for array initialization {1, 2, 3}
@@ -350,6 +364,7 @@ public:
         : Elements(std::move(Elements)), ElementType(ElementType) {}
     llvm::Value *codegen() override;
     OType getType() const { return OType(ElementType.base, 0, ElementType.structName, Elements.size()); }
+    OType getOType() const override { return getType(); }
 };
 
 /// VariableExprAST - Expression class for referencing a variable, like "a".
@@ -360,9 +375,10 @@ public:
     VariableExprAST(const std::string &Name, const std::string &TypeName = "") 
         : Name(Name), TypeName(TypeName) {}
     llvm::Value *codegen() override;
-    llvm::Value *codegenAddress(); // Return address without loading
+    llvm::Value *codegenAddress() override; // Return address without loading
     const std::string& getTypeName() const { return TypeName; }
     const std::string& getName() const { return Name; }
+    OType getOType() const override;
 };
 
 /// BinaryExprAST - Expression class for a binary operator (e.g., "+", "==", "&&").
@@ -374,6 +390,7 @@ public:
                   std::unique_ptr<ExprAST> RHS)
         : Op(Op), LHS(std::move(LHS)), RHS(std::move(RHS)) {}
     llvm::Value *codegen() override;
+    OType getOType() const override;
 };
 
 /// CallExprAST - Expression class for function calls.
@@ -385,6 +402,7 @@ public:
                 std::vector<std::unique_ptr<ExprAST>> Args)
         : Callee(Callee), Args(std::move(Args)) {}
     llvm::Value *codegen() override;
+    OType getOType() const override;
 };
 
 // 3. New Block Node
@@ -405,8 +423,8 @@ public:
               std::unique_ptr<ExprAST> Then,
               std::unique_ptr<ExprAST> Else)
         : Cond(std::move(Cond)), Then(std::move(Then)), Else(std::move(Else)) {}
-
     llvm::Value *codegen() override;
+    OType getOType() const override { return Then->getOType(); }
 };
 
 // 4b. Match Expression Node
@@ -426,6 +444,10 @@ public:
         : Cond(std::move(Cond)), Cases(std::move(Cases)) {}
     
     llvm::Value *codegen() override;
+    OType getOType() const override { 
+        if (!Cases.empty() && Cases[0].Body) return Cases[0].Body->getOType();
+        return OType(BaseType::Void);
+    }
 };
 
 // 5. Var Declaration Node: var x = 10; or var arr = int[10];
@@ -449,6 +471,7 @@ public:
     AssignmentExprAST(std::unique_ptr<ExprAST> LHS, std::unique_ptr<ExprAST> RHS)
         : LHS(std::move(LHS)), RHS(std::move(RHS)) {}
     llvm::Value *codegen() override;
+    OType getOType() const override { return RHS->getOType(); }
 };
 
 // 7. Return Node: return x;
@@ -475,6 +498,7 @@ public:
     const std::string &getName() const { return Name; }
     void setName(const std::string &NewName) { Name = NewName; }
     void injectThisParameter(const std::string &StructName);
+    const std::vector<std::pair<std::string, OType>>& getArgs() const { return Args; }
 };
 
 /// FunctionAST - Represents a full function definition (Proto + Body).

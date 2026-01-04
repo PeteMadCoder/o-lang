@@ -5,8 +5,58 @@
 std::unique_ptr<llvm::LLVMContext> TheContext;
 std::unique_ptr<llvm::IRBuilder<>> Builder;
 std::unique_ptr<llvm::Module> TheModule;
-std::map<std::string, llvm::AllocaInst *> NamedValues;
+
+// Scope Management
+struct ScopeLayer {
+    std::map<std::string, llvm::AllocaInst *> values;
+    std::map<std::string, OType> types;
+};
+
+std::vector<ScopeLayer> ScopeStack;
+std::map<std::string, OType> FunctionReturnTypes;
+
 std::unordered_map<std::string, llvm::StructType*> StructTypes;
+
+void EnterScope() {
+    ScopeStack.push_back(ScopeLayer());
+}
+
+void ExitScope() {
+    if (!ScopeStack.empty()) {
+        ScopeStack.pop_back();
+    } else {
+        fprintf(stderr, "Error: Scope stack underflow\n");
+    }
+}
+
+void AddVariable(const std::string& name, llvm::AllocaInst* val) {
+    if (ScopeStack.empty()) EnterScope();
+    ScopeStack.back().values[name] = val;
+}
+
+llvm::AllocaInst* GetVariable(const std::string& name) {
+    for (auto it = ScopeStack.rbegin(); it != ScopeStack.rend(); ++it) {
+        if (it->values.count(name)) {
+            return it->values.at(name);
+        }
+    }
+    return nullptr;
+}
+
+void AddVariableType(const std::string& name, OType type) {
+    if (ScopeStack.empty()) EnterScope();
+    ScopeStack.back().types[name] = type;
+}
+
+OType GetVariableType(const std::string& name) {
+    for (auto it = ScopeStack.rbegin(); it != ScopeStack.rend(); ++it) {
+        if (it->types.count(name)) {
+            return it->types.at(name);
+        }
+    }
+    return OType(BaseType::Void);
+}
+
 
 // Initialize the LLVM infrastructure
 void InitializeModuleAndPassManager() {
@@ -115,7 +165,7 @@ llvm::Value *NumberExprAST::codegen() {
 }
 
 llvm::Value *VariableExprAST::codegen() {
-    llvm::AllocaInst *A = NamedValues[Name];
+    llvm::AllocaInst *A = GetVariable(Name);
     if (!A) {
         LogError("Unknown variable name");
         return nullptr;
@@ -124,7 +174,7 @@ llvm::Value *VariableExprAST::codegen() {
 }
 
 llvm::Value *VariableExprAST::codegenAddress() {
-    llvm::AllocaInst *A = NamedValues[Name];
+    llvm::AllocaInst *A = GetVariable(Name);
     if (!A) {
         LogError("Unknown variable name");
         return nullptr;
@@ -175,7 +225,10 @@ llvm::Value *VarDeclExprAST::codegen() {
         Builder->CreateStore(Zero, Alloca);
     }
     
-    NamedValues[Name] = Alloca;
+    AddVariable(Name, Alloca);
+    
+    if (HasExplicitType) AddVariableType(Name, ExplicitType);
+    else if (Init) AddVariableType(Name, Init->getOType());
     
     return Alloca; // Return the address
 }
@@ -401,16 +454,21 @@ llvm::Value *CallExprAST::codegen() {
 }
 
 llvm::Value *BlockExprAST::codegen() {
+    EnterScope();
     llvm::Value *LastVal = nullptr;
     for (auto &Expr : Expressions) {
         LastVal = Expr->codegen();
-        if (!LastVal) return nullptr;
+        if (!LastVal) {
+             ExitScope();
+             return nullptr;
+        }
         
         // If the block is already terminated (e.g. by return), stop emitting
         if (Builder->GetInsertBlock()->getTerminator()) {
              break;
         }
     }
+    ExitScope();
     return LastVal;
 }
 
@@ -514,9 +572,14 @@ llvm::Value *WhileExprAST::codegen() {
 llvm::Value *ForExprAST::codegen() {
     llvm::Function *TheFunction = Builder->GetInsertBlock()->getParent();
 
+    EnterScope(); // Scope for Init variables
+
     // 1. Emit Init
     if (Init) {
-        if (!Init->codegen()) return nullptr;
+        if (!Init->codegen()) {
+            ExitScope();
+            return nullptr;
+        }
     }
 
     // Prepare Blocks
@@ -533,7 +596,10 @@ llvm::Value *ForExprAST::codegen() {
     llvm::Value *CondV = nullptr;
     if (Cond) {
         CondV = Cond->codegen();
-        if (!CondV) return nullptr;
+        if (!CondV) {
+            ExitScope();
+            return nullptr;
+        }
         
         // Convert to bool
         if (CondV->getType()->isDoubleTy()) {
@@ -552,7 +618,11 @@ llvm::Value *ForExprAST::codegen() {
     TheFunction->insert(TheFunction->end(), LoopBodyBB);
     Builder->SetInsertPoint(LoopBodyBB);
     
-    if (!Body->codegen()) return nullptr;
+    // Note: Body (BlockExprAST) will create its own inner scope.
+    if (!Body->codegen()) {
+        ExitScope();
+        return nullptr;
+    }
     
     // Jump to Latch (Step) if not terminated
     if (!Builder->GetInsertBlock()->getTerminator())
@@ -563,7 +633,10 @@ llvm::Value *ForExprAST::codegen() {
     Builder->SetInsertPoint(LoopEndBB);
     
     if (Step) {
-        if (!Step->codegen()) return nullptr;
+        if (!Step->codegen()) {
+            ExitScope();
+            return nullptr;
+        }
     }
     
     // Back to Cond
@@ -572,6 +645,8 @@ llvm::Value *ForExprAST::codegen() {
     // 5. After Loop
     TheFunction->insert(TheFunction->end(), AfterLoopBB);
     Builder->SetInsertPoint(AfterLoopBB);
+
+    ExitScope(); // Exit Init scope
 
     return llvm::Constant::getNullValue(llvm::Type::getInt32Ty(*TheContext));
 }
@@ -587,6 +662,8 @@ llvm::Function *PrototypeAST::codegen() {
 
     llvm::Function *F = llvm::Function::Create(
         FT, llvm::Function::ExternalLinkage, Name, TheModule.get());
+
+    FunctionReturnTypes[Name] = ReturnType;
 
     unsigned Idx = 0;
     for (auto &Arg : F->args())
@@ -605,12 +682,21 @@ llvm::Function *FunctionAST::codegen() {
     llvm::BasicBlock *BB = llvm::BasicBlock::Create(*TheContext, "entry", TheFunction);
     Builder->SetInsertPoint(BB);
 
-    NamedValues.clear();
+    ScopeStack.clear();
+    EnterScope(); // Function Scope
+
+    // Register types from prototype
+    const auto& ProtoArgs = Proto->getArgs();
+    for (const auto& ArgPair : ProtoArgs) {
+        AddVariableType(ArgPair.first, ArgPair.second);
+    }
+
     for (auto &Arg : TheFunction->args()) {
         llvm::AllocaInst *Alloca = CreateEntryBlockAlloca(TheFunction, std::string(Arg.getName()), Arg.getType());
         Builder->CreateStore(&Arg, Alloca);
-        NamedValues[std::string(Arg.getName())] = Alloca;
+        AddVariable(std::string(Arg.getName()), Alloca);
     }
+
 
     if (llvm::Value *RetVal = Body->codegen()) {
         // Only insert return if the block is not terminated
@@ -712,15 +798,14 @@ llvm::Function *ConstructorAST::codegen(const std::string& structName) {
     Builder->SetInsertPoint(BB);
     
     // Set parameter names and create allocas
-    std::map<std::string, llvm::AllocaInst*> oldNamedValues = NamedValues;
-    NamedValues.clear();
+    EnterScope();
     
     auto argIt = func->arg_begin();
     for (size_t i = 0; i < paramNames.size(); ++i, ++argIt) {
         argIt->setName(paramNames[i]);
         llvm::AllocaInst* alloca = CreateEntryBlockAlloca(func, paramNames[i], paramTypes[i]);
         Builder->CreateStore(&*argIt, alloca);
-        NamedValues[paramNames[i]] = alloca;
+        AddVariable(paramNames[i], alloca);
     }
     
     // Generate constructor body
@@ -729,8 +814,7 @@ llvm::Function *ConstructorAST::codegen(const std::string& structName) {
     // For now, return null pointer (proper struct allocation would go here)
     Builder->CreateRet(llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(returnType)));
     
-    // Restore old named values
-    NamedValues = oldNamedValues;
+    ExitScope();
     
     return func;
 }
@@ -1016,65 +1100,64 @@ llvm::Value *MatchExprAST::codegen() {
 }
 
 llvm::Value *IndexExprAST::codegen() {
-    // Use the working codegenAddress approach with correct size
+    // 1. Get Array Address
     llvm::Value *ArrayAddr = nullptr;
-    
     if (auto VarExpr = dynamic_cast<VariableExprAST*>(Array.get())) {
         ArrayAddr = VarExpr->codegenAddress();
     } else {
         ArrayAddr = Array->codegen();
     }
-    
     if (!ArrayAddr) return nullptr;
     
-    // Dynamically get the array type from the allocated value
-    llvm::Type *ArrayType = nullptr;
-    if (llvm::AllocaInst *AI = llvm::dyn_cast<llvm::AllocaInst>(ArrayAddr)) {
-        ArrayType = AI->getAllocatedType();
-    } else if (llvm::GlobalVariable *GV = llvm::dyn_cast<llvm::GlobalVariable>(ArrayAddr)) {
-        ArrayType = GV->getValueType();
-    } else if (llvm::GetElementPtrInst *GEP = llvm::dyn_cast<llvm::GetElementPtrInst>(ArrayAddr)) {
-        std::vector<llvm::Value*> Indices(GEP->idx_begin(), GEP->idx_end());
-        ArrayType = llvm::GetElementPtrInst::getIndexedType(GEP->getSourceElementType(), Indices);
-    }
-
+    // 2. Resolve Type Info from AST
+    OType ArrayOType = Array->getOType();
+    
     // Check for Slice (Dynamic Array)
-    if (ArrayType && ArrayType->isStructTy() && !ArrayType->getStructName().starts_with("class.") && !ArrayType->getStructName().starts_with("struct.")) {
-        if (ArrayType->getStructNumElements() == 2 && 
-            ArrayType->getStructElementType(0)->isIntegerTy(32) &&
-            ArrayType->getStructElementType(1)->isPointerTy()) {
-            
-            // 1. Get Size
-            llvm::Value *SizePtr = Builder->CreateStructGEP(ArrayType, ArrayAddr, 0, "slice_len_ptr");
-            llvm::Value *SizeVal = Builder->CreateLoad(llvm::Type::getInt32Ty(*TheContext), SizePtr, "slice_len");
-            
-            // 2. Bounds Check
-            llvm::Value *IndexVal = Index->codegen();
-            if (!IndexVal) return nullptr;
-            createBoundsCheck(IndexVal, SizeVal);
-            
-            // 3. Get Data Pointer
-            llvm::Value *DataPtrPtr = Builder->CreateStructGEP(ArrayType, ArrayAddr, 1, "slice_data_ptr");
-            llvm::Value *DataPtr = Builder->CreateLoad(ArrayType->getStructElementType(1), DataPtrPtr, "slice_data");
-            
-            // 4. Indexing
-            std::vector<llvm::Value*> Indices;
-            Indices.push_back(IndexVal); 
-            
-            llvm::Value *ElementAddr = Builder->CreateInBoundsGEP(
-               llvm::Type::getInt32Ty(*TheContext), 
-               DataPtr,
-               Indices,
-               "slice_idx"
-            );
-            
-            return Builder->CreateLoad(llvm::Type::getInt32Ty(*TheContext), ElementAddr, "slice_val_load");
-        }
+    if (ArrayOType.isArray() && ArrayOType.getArrayNumElements() == -1) {
+        // Slice Structure Type
+        llvm::Type *SliceType = getLLVMType(ArrayOType); // This should be {i32, T*}
+        
+        // 1. Get Size
+        llvm::Value *SizePtr = Builder->CreateStructGEP(SliceType, ArrayAddr, 0, "slice_len_ptr");
+        llvm::Value *SizeVal = Builder->CreateLoad(llvm::Type::getInt32Ty(*TheContext), SizePtr, "slice_len");
+        
+        // 2. Bounds Check
+        llvm::Value *IndexVal = Index->codegen();
+        if (!IndexVal) return nullptr;
+        createBoundsCheck(IndexVal, SizeVal);
+        
+        // 3. Get Data Pointer
+        llvm::Value *DataPtrPtr = Builder->CreateStructGEP(SliceType, ArrayAddr, 1, "slice_data_ptr");
+        llvm::Type *DataPtrType = SliceType->getStructElementType(1); // T*
+        llvm::Value *DataPtr = Builder->CreateLoad(DataPtrType, DataPtrPtr, "slice_data");
+        
+        // 4. Indexing GEP
+        std::vector<llvm::Value*> Indices;
+        Indices.push_back(IndexVal); 
+        
+        // Element Type
+        OType ElemOType = ArrayOType.getElementType();
+        llvm::Type *ElemLLVMType = getLLVMType(ElemOType);
+
+        llvm::Value *ElementAddr = Builder->CreateInBoundsGEP(
+           ElemLLVMType, 
+           DataPtr,
+           Indices,
+           "slice_idx"
+        );
+        
+        return Builder->CreateLoad(ElemLLVMType, ElementAddr, "slice_val_load");
     }
 
-    if (!ArrayType || !ArrayType->isArrayTy()) {
-        LogError("Indexing target is not an array or type could not be determined");
-        return nullptr;
+    // Fixed Array
+    llvm::Type *ArrayLLVMType = getLLVMType(ArrayOType);
+    if (!ArrayLLVMType->isArrayTy()) {
+        // Fallback or Error? 
+        // Might be a pointer to array?
+        if (ArrayLLVMType->isPointerTy()) {
+             // Pointer arithmetic
+             // ...
+        }
     }
     
     // Get the index value
@@ -1082,7 +1165,7 @@ llvm::Value *IndexExprAST::codegen() {
     if (!IndexVal) return nullptr;
     
     // Perform Bounds Check
-    uint64_t Size = ArrayType->getArrayNumElements();
+    uint64_t Size = ArrayOType.getArrayNumElements();
     llvm::Value *SizeVal = llvm::ConstantInt::get(llvm::Type::getInt32Ty(*TheContext), Size);
     createBoundsCheck(IndexVal, SizeVal);
     
@@ -1092,7 +1175,7 @@ llvm::Value *IndexExprAST::codegen() {
     Indices.push_back(IndexVal);
     
     llvm::Value *ElementAddr = Builder->CreateInBoundsGEP(
-        ArrayType,
+        ArrayLLVMType,
         ArrayAddr,
         Indices,
         "arrayidx"
@@ -1100,90 +1183,80 @@ llvm::Value *IndexExprAST::codegen() {
     
     // If the element is an array (multidimensional), return the address (decay to pointer)
     // Otherwise, load the value (primitive)
-    if (ArrayType->getArrayElementType()->isArrayTy()) {
+    if (ArrayOType.getElementType().isArray()) {
         return ElementAddr;
     }
     
-    return Builder->CreateLoad(ArrayType->getArrayElementType(), ElementAddr, "arrayload");
+    return Builder->CreateLoad(getLLVMType(ArrayOType.getElementType()), ElementAddr, "arrayload");
 }
 
 llvm::Value *IndexExprAST::codegenAddress() {
-    // Get the array address
+    // 1. Get Array Address
     llvm::Value *ArrayAddr = nullptr;
-    
     if (auto VarExpr = dynamic_cast<VariableExprAST*>(Array.get())) {
         ArrayAddr = VarExpr->codegenAddress();
     } else {
         ArrayAddr = Array->codegen();
     }
-    
     if (!ArrayAddr) return nullptr;
     
-    // Dynamically get the array type from the allocated value
-    llvm::Type *ArrayType = nullptr;
-    if (llvm::AllocaInst *AI = llvm::dyn_cast<llvm::AllocaInst>(ArrayAddr)) {
-        ArrayType = AI->getAllocatedType();
-    } else if (llvm::GlobalVariable *GV = llvm::dyn_cast<llvm::GlobalVariable>(ArrayAddr)) {
-        ArrayType = GV->getValueType();
-    } else if (llvm::GetElementPtrInst *GEP = llvm::dyn_cast<llvm::GetElementPtrInst>(ArrayAddr)) {
-        std::vector<llvm::Value*> Indices(GEP->idx_begin(), GEP->idx_end());
-        ArrayType = llvm::GetElementPtrInst::getIndexedType(GEP->getSourceElementType(), Indices);
-    }
-
+    // 2. Resolve Type Info from AST
+    OType ArrayOType = Array->getOType();
+    
     // Check for Slice (Dynamic Array)
-    if (ArrayType && ArrayType->isStructTy() && !ArrayType->getStructName().starts_with("class.") && !ArrayType->getStructName().starts_with("struct.")) {
-        if (ArrayType->getStructNumElements() == 2 && 
-            ArrayType->getStructElementType(0)->isIntegerTy(32) &&
-            ArrayType->getStructElementType(1)->isPointerTy()) {
-            
-            // 1. Get Size
-            llvm::Value *SizePtr = Builder->CreateStructGEP(ArrayType, ArrayAddr, 0, "slice_len_ptr");
-            llvm::Value *SizeVal = Builder->CreateLoad(llvm::Type::getInt32Ty(*TheContext), SizePtr, "slice_len");
-            
-            // 2. Bounds Check
-            llvm::Value *IndexVal = Index->codegen();
-            if (!IndexVal) return nullptr;
-            createBoundsCheck(IndexVal, SizeVal);
-            
-            // 3. Get Data Pointer
-            llvm::Value *DataPtrPtr = Builder->CreateStructGEP(ArrayType, ArrayAddr, 1, "slice_data_ptr");
-            llvm::Value *DataPtr = Builder->CreateLoad(ArrayType->getStructElementType(1), DataPtrPtr, "slice_data");
-            
-            // 4. Indexing
-            std::vector<llvm::Value*> Indices;
-            Indices.push_back(IndexVal); 
-            
-            // Assumption: int array (slice)
-            return Builder->CreateInBoundsGEP(
-               llvm::Type::getInt32Ty(*TheContext), 
-               DataPtr,
-               Indices,
-               "slice_addr"
-            );
-        }
-    }
+    if (ArrayOType.isArray() && ArrayOType.getArrayNumElements() == -1) {
+        // Slice Structure Type
+        llvm::Type *SliceType = getLLVMType(ArrayOType); 
+        
+        // 1. Get Size
+        llvm::Value *SizePtr = Builder->CreateStructGEP(SliceType, ArrayAddr, 0, "slice_len_ptr");
+        llvm::Value *SizeVal = Builder->CreateLoad(llvm::Type::getInt32Ty(*TheContext), SizePtr, "slice_len");
+        
+        // 2. Bounds Check
+        llvm::Value *IndexVal = Index->codegen();
+        if (!IndexVal) return nullptr;
+        createBoundsCheck(IndexVal, SizeVal);
+        
+        // 3. Get Data Pointer
+        llvm::Value *DataPtrPtr = Builder->CreateStructGEP(SliceType, ArrayAddr, 1, "slice_data_ptr");
+        llvm::Type *DataPtrType = SliceType->getStructElementType(1); // T*
+        llvm::Value *DataPtr = Builder->CreateLoad(DataPtrType, DataPtrPtr, "slice_data");
+        
+        // 4. Indexing GEP
+        std::vector<llvm::Value*> Indices;
+        Indices.push_back(IndexVal); 
+        
+        // Element Type
+        OType ElemOType = ArrayOType.getElementType();
+        llvm::Type *ElemLLVMType = getLLVMType(ElemOType);
 
-    if (!ArrayType || !ArrayType->isArrayTy()) {
-        LogError("Indexing target is not an array or type could not be determined");
-        return nullptr;
+        return Builder->CreateInBoundsGEP(
+           ElemLLVMType, 
+           DataPtr,
+           Indices,
+           "slice_addr"
+        );
     }
+    
+    // Fixed Array
+    llvm::Type *ArrayLLVMType = getLLVMType(ArrayOType);
     
     // Get the index value
     llvm::Value *IndexVal = Index->codegen();
     if (!IndexVal) return nullptr;
     
     // Perform Bounds Check
-    uint64_t Size = ArrayType->getArrayNumElements();
+    uint64_t Size = ArrayOType.getArrayNumElements();
     llvm::Value *SizeVal = llvm::ConstantInt::get(llvm::Type::getInt32Ty(*TheContext), Size);
     createBoundsCheck(IndexVal, SizeVal);
     
-    // Use GEP to calculate element address (for assignment)
+    // Create indices: {0, Index}
     std::vector<llvm::Value*> Indices;
     Indices.push_back(llvm::ConstantInt::get(llvm::Type::getInt32Ty(*TheContext), 0));
     Indices.push_back(IndexVal);
     
     return Builder->CreateInBoundsGEP(
-        ArrayType,
+        ArrayLLVMType,
         ArrayAddr,
         Indices,
         "arrayaddr"
@@ -1316,66 +1389,131 @@ void ClassDeclAST::generateVTable() {
 }
 
 llvm::Value *MemberAccessAST::codegen() {
-    // Generate code for the object
-    llvm::Value *ObjVal = nullptr;
+    // 1. Get Address of Field
+    llvm::Value *FieldPtr = codegenAddress();
+    if (!FieldPtr) {
+        // Fallback for non-lvalue access (e.g. array.len)
+        OType ObjOType = Object->getOType();
+        if (ObjOType.isArray() && (FieldName == "len" || FieldName == "length")) {
+             return llvm::ConstantInt::get(llvm::Type::getInt32Ty(*TheContext), ObjOType.getArrayNumElements());
+        }
+        
+        // Check for Slice Length Property
+         if (ObjOType.isArray() && ObjOType.getArrayNumElements() == -1 && (FieldName == "len" || FieldName == "length")) {
+             llvm::Value *ObjVal = Object->codegen();
+             if (!ObjVal) return nullptr;
+             
+             if (ObjVal->getType()->isStructTy()) {
+                 return Builder->CreateExtractValue(ObjVal, 0, "len");
+             }
+         }
+        
+        return nullptr;
+    }
     
-    // If it's a variable, we want the address to check the type properly
-    if (auto VarExpr = dynamic_cast<VariableExprAST*>(Object.get())) {
-        ObjVal = VarExpr->codegenAddress();
+    // 2. Load Value
+    OType FieldType = getOType();
+    llvm::Type *LLVMFieldType = getLLVMType(FieldType);
+    
+    return Builder->CreateLoad(LLVMFieldType, FieldPtr, FieldName);
+}
+
+llvm::Value *MemberAccessAST::codegenAddress() {
+    llvm::Value *ObjAddr = nullptr;
+    OType ObjOType = Object->getOType();
+    
+    // Strategy: Get the "base pointer" to the struct.
+    if (ObjOType.isPointer()) {
+        ObjAddr = Object->codegen();
     } else {
-        ObjVal = Object->codegen();
+        ObjAddr = Object->codegenAddress();
     }
-
-    if (!ObjVal) return nullptr;
-
-    llvm::Type *ObjType = ObjVal->getType();
     
-    // Unwrap pointer if needed (AllocaInst returns pointer to array)
-    if (ObjType->isPointerTy()) {
-        if (llvm::AllocaInst *AI = llvm::dyn_cast<llvm::AllocaInst>(ObjVal)) {
-             ObjType = AI->getAllocatedType();
-        } else if (llvm::GlobalVariable *GV = llvm::dyn_cast<llvm::GlobalVariable>(ObjVal)) {
-             ObjType = GV->getValueType();
-        } else {
-             // Try to peek element type (warning: deprecated in newer LLVM but useful for now)
-             // ObjType = ObjType->getPointerElementType(); 
-        }
+    if (!ObjAddr) return nullptr;
+    
+    if (ObjOType.base != BaseType::Struct) {
+        return nullptr;
     }
-
-    // Check for Array Length Property
-    if (ObjType->isArrayTy()) {
-        if (FieldName == "len" || FieldName == "length") {
-            uint64_t Size = ObjType->getArrayNumElements();
-            return llvm::ConstantInt::get(llvm::Type::getInt32Ty(*TheContext), Size);
+    
+    std::string StructName = ObjOType.structName;
+    if (!TypeRegistry::getInstance().hasStruct(StructName)) {
+        return nullptr;
+    }
+    
+    const StructInfo& info = TypeRegistry::getInstance().getStruct(StructName);
+    
+    int fieldIndex = -1;
+    for (size_t i = 0; i < info.fields.size(); ++i) {
+        if (info.fields[i].name == FieldName) {
+            fieldIndex = i;
+            break;
         }
     }
     
-    // Check for Slice Length Property (Dynamic Array)
-    if (ObjType->isStructTy() && !ObjType->getStructName().starts_with("class.") && !ObjType->getStructName().starts_with("struct.")) {
-        // Assume anonymous struct { i32, T* } is a slice
-        if (ObjType->getStructNumElements() == 2 && 
-            ObjType->getStructElementType(0)->isIntegerTy(32) &&
-            ObjType->getStructElementType(1)->isPointerTy()) {
-            
-            if (FieldName == "len" || FieldName == "length") {
-                // ObjVal is a pointer to the slice struct (if l-value) or the struct value itself?
-                // ObjVal came from codegenAddress() or codegen().
-                // If ObjVal is pointer (Alloca), we GEP to field 0 and load.
-                // If ObjVal is value, we ExtractValue.
-                
-                if (ObjVal->getType()->isPointerTy()) {
-                    llvm::Value *LenPtr = Builder->CreateStructGEP(ObjType, ObjVal, 0, "len_ptr");
-                    return Builder->CreateLoad(llvm::Type::getInt32Ty(*TheContext), LenPtr, "len_val");
-                } else {
-                    return Builder->CreateExtractValue(ObjVal, 0, "len_val");
-                }
+    if (fieldIndex == -1) return nullptr;
+    
+    llvm::StructType *ST = StructTypes[StructName];
+    if (!ST) return nullptr;
+    
+    std::vector<llvm::Value*> Indices;
+    Indices.push_back(llvm::ConstantInt::get(llvm::Type::getInt32Ty(*TheContext), 0));
+    Indices.push_back(llvm::ConstantInt::get(llvm::Type::getInt32Ty(*TheContext), fieldIndex));
+    
+    return Builder->CreateInBoundsGEP(ST, ObjAddr, Indices, "fieldaddr");
+}
+
+OType MemberAccessAST::getOType() const {
+    OType ObjType = Object->getOType();
+    if (ObjType.base == BaseType::Struct) {
+        // Lookup field type
+        if (TypeRegistry::getInstance().hasStruct(ObjType.structName)) {
+            const StructInfo& info = TypeRegistry::getInstance().getStruct(ObjType.structName);
+            for (const auto& field : info.fields) {
+                if (field.name == FieldName) return field.type;
             }
         }
     }
+    // Handle Array/Slice len
+    if (ObjType.isArray() && (FieldName == "len" || FieldName == "length")) {
+        return OType(BaseType::Int);
+    }
+    return OType(BaseType::Void);
+}
 
-    // TODO: Implement struct member access
-    LogError("Member access not fully implemented (only array.len supported)");
-    return nullptr;
+OType VariableExprAST::getOType() const {
+    return GetVariableType(Name);
+}
+
+OType BinaryExprAST::getOType() const {
+    // Basic inference: assume LHS type
+    return LHS->getOType();
+}
+
+OType CallExprAST::getOType() const {
+    if (FunctionReturnTypes.count(Callee)) return FunctionReturnTypes.at(Callee);
+    return OType(BaseType::Void);
+}
+
+OType NewArrayExprAST::getOType() const {
+    // Return slice type
+    std::vector<int> sizes = ElementType.arraySizes;
+    sizes.insert(sizes.begin(), -1); // Prepend -1 for slice
+    return OType(ElementType.base, ElementType.pointerDepth, ElementType.structName, sizes);
+}
+
+OType IndexExprAST::getOType() const {
+    OType ArrType = Array->getOType();
+    return ArrType.getElementType();
+}
+
+OType DerefExprAST::getOType() const {
+    OType PtrType = Operand->getOType();
+    return PtrType.getPointeeType();
+}
+
+OType AddressOfExprAST::getOType() const {
+    OType OpType = Operand->getOType();
+    return OpType.getPointerTo();
 }
 
 llvm::Value *ArrayInitExprAST::codegen() {
