@@ -19,8 +19,8 @@
 void InitializeModuleAndPassManager();
 extern std::unique_ptr<llvm::Module> TheModule;
 
-// Include the Parser logic (assuming Parser.cpp contains the class definition)
-#include "Parser.cpp" 
+// Include the Parser logic
+#include "Parser.h" 
 
 int main(int argc, char** argv) {
     // 1. Initialize LLVM

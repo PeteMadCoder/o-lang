@@ -116,6 +116,9 @@ llvm::Value *BinaryExprAST::codegen() {
         case '-': 
             return isFloat ? Builder->CreateFSub(L, R, "subtmp") 
                            : Builder->CreateSub(L, R, "subtmp");
+        case '*': 
+            return isFloat ? Builder->CreateFMul(L, R, "multmp") 
+                           : Builder->CreateMul(L, R, "multmp");
         case '/': 
             return isFloat ? Builder->CreateFDiv(L, R, "divtmp") 
                            : Builder->CreateSDiv(L, R, "divtmp");
