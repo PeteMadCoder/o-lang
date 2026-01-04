@@ -1,0 +1,36 @@
+struct Calculator {
+    int value;
+    
+    new(int initial) {
+        // Constructor with parameter
+        var temp = initial * 2;
+    }
+    
+    fn compute() -> int {
+        return 100;
+    }
+}
+
+struct SimpleClass {
+    int data;
+    
+    new() {
+        // Default constructor
+        var x = 42;
+    }
+}
+
+fn testMultipleConstructors() -> int {
+    // Test constructor with arguments
+    var calc = new Calculator(50);
+    
+    // Test default constructor
+    var simple = new SimpleClass();
+    
+    return 123;
+}
+
+fn main() -> int {
+    var result = testMultipleConstructors();
+    return result;
+}

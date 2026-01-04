@@ -29,17 +29,22 @@ enum class BaseType { Void, Int, Float, Bool, Char, Byte, Struct };
 struct OType {
     BaseType base;
     int pointerDepth = 0; // 0 = value, 1 = *, 2 = **, etc.
+    int arraySize = 0; // 0 = not array, >0 = array size
     std::string structName; // For struct types
     
-    OType(BaseType b = BaseType::Void, int depth = 0, const std::string& name = "") 
-        : base(b), pointerDepth(depth), structName(name) {}
+    OType(BaseType b = BaseType::Void, int depth = 0, const std::string& name = "", int arrSize = 0) 
+        : base(b), pointerDepth(depth), arraySize(arrSize), structName(name) {}
     
     bool isPointer() const { return pointerDepth > 0; }
+    bool isArray() const { return arraySize > 0; }
     OType getPointeeType() const { 
-        return OType(base, pointerDepth - 1, structName); 
+        return OType(base, pointerDepth - 1, structName, arraySize); 
     }
     OType getPointerTo() const { 
-        return OType(base, pointerDepth + 1, structName); 
+        return OType(base, pointerDepth + 1, structName, arraySize); 
+    }
+    OType getElementType() const {
+        return OType(base, pointerDepth, structName, 0); // Remove array dimension
     }
 };
 
@@ -82,18 +87,6 @@ public:
         return structs.at(name);
     }
     
-private:
-    std::unordered_map<std::string, StructInfo> structs;
-    
-    size_t calculateSize(const std::vector<FieldInfo>& fields) {
-        size_t offset = 0;
-        for (auto& field : fields) {
-            size_t fieldSize = getTypeSize(field.type);
-            offset += fieldSize;
-        }
-        return offset;
-    }
-    
     size_t getTypeSize(const OType& type) {
         if (type.isPointer()) return 8; // All pointers are 8 bytes
         
@@ -105,6 +98,18 @@ private:
             case BaseType::Float: return 8;
             default: return 4;
         }
+    }
+    
+private:
+    std::unordered_map<std::string, StructInfo> structs;
+    
+    size_t calculateSize(const std::vector<FieldInfo>& fields) {
+        size_t offset = 0;
+        for (auto& field : fields) {
+            size_t fieldSize = getTypeSize(field.type);
+            offset += fieldSize;
+        }
+        return offset;
     }
 };
 
@@ -191,6 +196,34 @@ public:
     bool isGeneric() const { return !GenericParams.empty(); }
 };
 
+/// ClassDeclAST - Represents a class declaration with inheritance
+class ClassDeclAST {
+    std::string Name;
+    std::string ParentName; // Empty if no inheritance
+    bool IsOpen; // Can be inherited from
+    std::vector<std::pair<std::string, OType>> Fields;
+    std::vector<std::unique_ptr<FunctionAST>> Methods;
+    std::vector<std::unique_ptr<ConstructorAST>> Constructors;
+    std::vector<std::string> VirtualMethods; // Names of virtual methods
+public:
+    ClassDeclAST(const std::string &Name,
+                 const std::string &ParentName,
+                 bool IsOpen,
+                 std::vector<std::pair<std::string, OType>> Fields,
+                 std::vector<std::unique_ptr<FunctionAST>> Methods = {},
+                 std::vector<std::unique_ptr<ConstructorAST>> Constructors = {},
+                 std::vector<std::string> VirtualMethods = {})
+        : Name(Name), ParentName(ParentName), IsOpen(IsOpen), Fields(std::move(Fields)), 
+          Methods(std::move(Methods)), Constructors(std::move(Constructors)),
+          VirtualMethods(std::move(VirtualMethods)) {}
+    
+    void codegen(); // Register the class type with VTable
+    void generateVTable(); // Generate VTable for virtual methods
+    const std::string& getName() const { return Name; }
+    bool hasParent() const { return !ParentName.empty(); }
+    bool isOpen() const { return IsOpen; }
+};
+
 /// MemberAccessAST - Expression for accessing struct members (obj.field)
 class MemberAccessAST : public ExprAST {
     std::unique_ptr<ExprAST> Object;
@@ -232,6 +265,48 @@ public:
     llvm::Value *codegenAddress(); // For LHS assignment: *ptr = value
 };
 
+/// NewExprAST - Expression for object instantiation (new ClassName(args))
+class NewExprAST : public ExprAST {
+    std::string ClassName;
+    std::vector<std::unique_ptr<ExprAST>> Args;
+public:
+    NewExprAST(const std::string &ClassName, std::vector<std::unique_ptr<ExprAST>> Args)
+        : ClassName(ClassName), Args(std::move(Args)) {}
+    llvm::Value *codegen() override;
+};
+
+/// IndexExprAST - Expression for array indexing (arr[index])
+class IndexExprAST : public ExprAST {
+    std::unique_ptr<ExprAST> Array;
+    std::unique_ptr<ExprAST> Index;
+public:
+    IndexExprAST(std::unique_ptr<ExprAST> Array, std::unique_ptr<ExprAST> Index)
+        : Array(std::move(Array)), Index(std::move(Index)) {}
+    llvm::Value *codegen() override;
+    llvm::Value *codegenAddress(); // For LHS assignment: arr[i] = value
+};
+
+/// ArrayLiteralExprAST - Expression for array type literals (int[10])
+class ArrayLiteralExprAST : public ExprAST {
+    OType ElementType;
+    int Size;
+public:
+    ArrayLiteralExprAST(OType ElementType, int Size)
+        : ElementType(ElementType), Size(Size) {}
+    llvm::Value *codegen() override;
+};
+
+/// ArrayInitExprAST - Expression for array initialization {1, 2, 3}
+class ArrayInitExprAST : public ExprAST {
+    std::vector<std::unique_ptr<ExprAST>> Elements;
+    OType ElementType;
+public:
+    ArrayInitExprAST(std::vector<std::unique_ptr<ExprAST>> Elements, OType ElementType)
+        : Elements(std::move(Elements)), ElementType(ElementType) {}
+    llvm::Value *codegen() override;
+    OType getType() const { return OType(ElementType.base, 0, ElementType.structName, Elements.size()); }
+};
+
 /// VariableExprAST - Expression class for referencing a variable, like "a".
 class VariableExprAST : public ExprAST {
     std::string Name;
@@ -242,6 +317,7 @@ public:
     llvm::Value *codegen() override;
     llvm::Value *codegenAddress(); // Return address without loading
     const std::string& getTypeName() const { return TypeName; }
+    const std::string& getName() const { return Name; }
 };
 
 /// BinaryExprAST - Expression class for a binary operator (e.g., "+", "==", "&&").
@@ -288,13 +364,16 @@ public:
     llvm::Value *codegen() override;
 };
 
-// 5. Var Declaration Node: var x = 10;
+// 5. Var Declaration Node: var x = 10; or var arr = int[10];
 class VarDeclExprAST : public ExprAST {
     std::string Name;
     std::unique_ptr<ExprAST> Init;
+    OType ExplicitType; // For explicit type annotations
+    bool HasExplicitType;
 public:
-    VarDeclExprAST(const std::string &Name, std::unique_ptr<ExprAST> Init)
-        : Name(Name), Init(std::move(Init)) {}
+    VarDeclExprAST(const std::string &Name, std::unique_ptr<ExprAST> Init, 
+                   OType ExplicitType = OType(), bool HasExplicitType = false)
+        : Name(Name), Init(std::move(Init)), ExplicitType(ExplicitType), HasExplicitType(HasExplicitType) {}
     llvm::Value *codegen() override;
 };
 
@@ -330,6 +409,8 @@ public:
 
     llvm::Function *codegen();
     const std::string &getName() const { return Name; }
+    void setName(const std::string &NewName) { Name = NewName; }
+    void injectThisParameter(const std::string &StructName);
 };
 
 /// FunctionAST - Represents a full function definition (Proto + Body).
@@ -341,4 +422,5 @@ public:
                 std::unique_ptr<ExprAST> Body)
         : Proto(std::move(Proto)), Body(std::move(Body)) {}
     llvm::Function *codegen();
+    PrototypeAST* getPrototype() { return Proto.get(); }
 };

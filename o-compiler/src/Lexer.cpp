@@ -8,7 +8,7 @@ static std::unordered_map<std::string, TokenType> keywords = {
     {"return", TokenType::Return}, {"if", TokenType::If}, {"else", TokenType::Else},
     {"while", TokenType::While}, {"class", TokenType::Class}, {"struct", TokenType::Struct},
     {"module", TokenType::Module}, {"import", TokenType::Import}, {"new", TokenType::New},
-    {"unsafe", TokenType::Unsafe},
+    {"unsafe", TokenType::Unsafe}, {"open", TokenType::Open}, {"virtual", TokenType::Virtual},
     {"int", TokenType::TypeInt}, {"float", TokenType::TypeFloat},
     {"bool", TokenType::TypeBool}, {"void", TokenType::TypeVoid},
     {"char", TokenType::TypeChar}, {"byte", TokenType::TypeByte},
@@ -142,7 +142,10 @@ Token Lexer::next_token() {
         case ')': return atom(TokenType::RParen);
         case '{': return atom(TokenType::LBrace);
         case '}': return atom(TokenType::RBrace);
+        case '[': return atom(TokenType::LBracket);
+        case ']': return atom(TokenType::RBracket);
         case ';': return atom(TokenType::Semicolon);
+        case ':': return atom(TokenType::Colon);
         case ',': return atom(TokenType::Comma);
         case '+': return atom(TokenType::Plus);
         case '*': return atom(TokenType::Star);

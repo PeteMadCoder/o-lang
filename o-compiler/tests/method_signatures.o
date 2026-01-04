@@ -1,0 +1,18 @@
+struct Calculator {
+    int value;
+    
+    fn add(int n) -> int {
+        // This should become Calculator_add(*Calculator this, int n) -> int
+        return 42 + n; // Simplified - can't access 'this' fields yet
+    }
+    
+    fn multiply(int a, int b) -> int {
+        // This should become Calculator_multiply(*Calculator this, int a, int b) -> int
+        return a * b;
+    }
+}
+
+fn main() -> int {
+    // The methods exist with proper signatures
+    return 0;
+}

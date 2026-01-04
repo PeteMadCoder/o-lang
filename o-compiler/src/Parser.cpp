@@ -109,6 +109,27 @@ OType Parser::ParseType() {
     
     // Apply pointer depth
     baseType.pointerDepth = pointerDepth;
+    
+    // Check for array syntax: Type[size]
+    if (curTok.type == TokenType::LBracket) {
+        getNextToken(); // eat '['
+        
+        if (curTok.type == TokenType::Integer) {
+            int arraySize = std::stoi(curTok.text);
+            baseType.arraySize = arraySize;
+            getNextToken(); // eat size
+        } else {
+            // Empty brackets [] for unsized arrays (future feature)
+            baseType.arraySize = -1; // Mark as unsized
+        }
+        
+        if (curTok.type != TokenType::RBracket) {
+            LogError("Expected ']' after array size");
+            return OType(BaseType::Void);
+        }
+        getNextToken(); // eat ']'
+    }
+    
     return baseType;
 }
 
@@ -148,6 +169,82 @@ std::unique_ptr<ExprAST> Parser::ParseStringExpr() {
     std::string content = strText.substr(1, strText.length() - 2);
     getNextToken();
     return std::make_unique<StringExprAST>(content);
+}
+
+std::unique_ptr<ExprAST> Parser::ParseNewExpr() {
+    if (curTok.type != TokenType::New) return nullptr;
+    getNextToken(); // eat 'new'
+    
+    if (curTok.type != TokenType::Identifier) {
+        return LogError("Expected class name after 'new'");
+    }
+    
+    std::string ClassName = curTok.text;
+    getNextToken(); // eat class name
+    
+    if (curTok.type != TokenType::LParen) {
+        return LogError("Expected '(' after class name");
+    }
+    getNextToken(); // eat '('
+    
+    std::vector<std::unique_ptr<ExprAST>> Args;
+    while (curTok.type != TokenType::RParen && curTok.type != TokenType::EoF) {
+        auto Arg = ParseExpression();
+        if (!Arg) return nullptr;
+        Args.push_back(std::move(Arg));
+        
+        if (curTok.type == TokenType::Comma) {
+            getNextToken(); // eat ','
+        }
+    }
+    
+    if (curTok.type != TokenType::RParen) {
+        return LogError("Expected ')' after arguments");
+    }
+    getNextToken(); // eat ')'
+    
+    return std::make_unique<NewExprAST>(ClassName, std::move(Args));
+}
+
+std::unique_ptr<ExprAST> Parser::ParseArrayTypeExpr() {
+    // This handles parsing array types as expressions: int[10]
+    // We need to backtrack and reparse as array type
+    
+    // For now, this is a placeholder - array types in expressions
+    // would need more sophisticated parsing
+    return nullptr;
+}
+
+std::unique_ptr<ExprAST> Parser::ParseArrayInitExpr() {
+    getNextToken(); // eat '{'
+    
+    std::vector<std::unique_ptr<ExprAST>> Elements;
+    
+    // Handle empty array: {}
+    if (curTok.type == TokenType::RBrace) {
+        getNextToken(); // eat '}'
+        return std::make_unique<ArrayInitExprAST>(std::move(Elements), OType(BaseType::Void));
+    }
+    
+    // Parse first element
+    auto FirstElement = ParseExpression();
+    if (!FirstElement) return nullptr;
+    Elements.push_back(std::move(FirstElement));
+    
+    // Parse remaining elements
+    while (curTok.type == TokenType::Comma) {
+        getNextToken(); // eat ','
+        auto Element = ParseExpression();
+        if (!Element) return nullptr;
+        Elements.push_back(std::move(Element));
+    }
+    
+    if (curTok.type != TokenType::RBrace)
+        return LogError("Expected '}' after array elements");
+    getNextToken(); // eat '}'
+    
+    // Type will be inferred from first element during codegen
+    return std::make_unique<ArrayInitExprAST>(std::move(Elements), OType(BaseType::Void));
 }
 
 std::unique_ptr<ExprAST> Parser::ParseParenExpr() {
@@ -239,12 +336,14 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary() {
         case TokenType::False:      getNextToken(); return std::make_unique<BoolExprAST>(false);
         case TokenType::If:         return ParseIfExpr();
         case TokenType::Unsafe:     return ParseUnsafeBlock();
+        case TokenType::New:        return ParseNewExpr();
         case TokenType::Identifier: return ParseIdentifierExpr();
         case TokenType::Integer:    return ParseNumberExpr();
         case TokenType::Float:      return ParseNumberExpr();
         case TokenType::CharLit:    return ParseCharExpr();
         case TokenType::StringLit:  return ParseStringExpr();
         case TokenType::LParen:     return ParseParenExpr();
+        case TokenType::LBrace:     return ParseArrayInitExpr();
         default: return LogError("unknown token when expecting an expression");
     }
 }
@@ -253,17 +352,33 @@ std::unique_ptr<ExprAST> Parser::ParsePostfix() {
     auto Expr = ParsePrimary();
     if (!Expr) return nullptr;
     
-    while (curTok.type == TokenType::Dot) {
-        getNextToken(); // eat '.'
-        
-        if (curTok.type != TokenType::Identifier) {
-            return LogError("Expected field name after '.'");
+    while (curTok.type == TokenType::Dot || curTok.type == TokenType::LBracket) {
+        if (curTok.type == TokenType::Dot) {
+            getNextToken(); // eat '.'
+            
+            if (curTok.type != TokenType::Identifier) {
+                return LogError("Expected field name after '.'");
+            }
+            
+            std::string FieldName = curTok.text;
+            getNextToken(); // eat field name
+            
+            Expr = std::make_unique<MemberAccessAST>(std::move(Expr), FieldName);
+        } else if (curTok.type == TokenType::LBracket) {
+            getNextToken(); // eat '['
+            
+            auto Index = ParseExpression();
+            if (!Index) {
+                return LogError("Expected index expression");
+            }
+            
+            if (curTok.type != TokenType::RBracket) {
+                return LogError("Expected ']' after index");
+            }
+            getNextToken(); // eat ']'
+            
+            Expr = std::make_unique<IndexExprAST>(std::move(Expr), std::move(Index));
         }
-        
-        std::string FieldName = curTok.text;
-        getNextToken(); // eat field name
-        
-        Expr = std::make_unique<MemberAccessAST>(std::move(Expr), FieldName);
     }
     
     return Expr;
@@ -334,8 +449,17 @@ std::unique_ptr<ExprAST> Parser::ParseVarDecl() {
     std::string Name = curTok.text;
     getNextToken(); // eat identifier
     
+    // Check for optional type annotation: var name: type = value
+    OType ExplicitType;
+    bool HasExplicitType = false;
+    if (curTok.type == TokenType::Colon) {
+        getNextToken(); // eat ':'
+        ExplicitType = ParseType();
+        HasExplicitType = true;
+    }
+    
     if (curTok.type != TokenType::Equal)
-            return LogError("Expected '=' in variable declaration");
+        return LogError("Expected '=' in variable declaration");
     getNextToken(); // eat '='
     
     auto Init = ParseExpression();
@@ -345,7 +469,7 @@ std::unique_ptr<ExprAST> Parser::ParseVarDecl() {
         return LogError("Expected ';' after variable declaration");
     getNextToken(); // eat ';'
     
-    return std::make_unique<VarDeclExprAST>(Name, std::move(Init));
+    return std::make_unique<VarDeclExprAST>(Name, std::move(Init), ExplicitType, HasExplicitType);
 }
 
 std::unique_ptr<ExprAST> Parser::ParseWhileStmt() {
@@ -442,7 +566,7 @@ std::unique_ptr<PrototypeAST> Parser::ParsePrototype() {
            curTok.type == TokenType::TypeBool || curTok.type == TokenType::TypeVoid ||
            curTok.type == TokenType::TypeChar || curTok.type == TokenType::TypeByte ||
            curTok.type == TokenType::Star || curTok.type == TokenType::Identifier) {
-        // Parse "Type Name" (including pointer types like *int, **float)
+        // Parse "Type Name" (including pointer types like *int, **float, and array types like int[10])
         OType ArgType = ParseType();
         
         if (curTok.type != TokenType::Identifier) return LogErrorP("Expected arg name");
@@ -558,11 +682,128 @@ std::unique_ptr<StructDeclAST> Parser::ParseStruct() {
     return std::make_unique<StructDeclAST>(StructName, std::move(GenericParams), std::move(Fields), std::move(Methods), std::move(Constructors));
 }
 
+std::unique_ptr<ClassDeclAST> Parser::ParseClass() {
+    bool isOpen = false;
+    
+    // Check for optional 'open' modifier
+    if (curTok.type == TokenType::Open) {
+        isOpen = true;
+        getNextToken(); // eat 'open'
+    }
+    
+    if (curTok.type != TokenType::Class) return nullptr;
+    getNextToken(); // eat 'class'
+    
+    if (curTok.type != TokenType::Identifier) {
+        LogError("Expected class name");
+        return nullptr;
+    }
+    
+    std::string ClassName = curTok.text;
+    getNextToken(); // eat class name
+    
+    // Parse optional inheritance: : ParentName
+    std::string ParentName = "";
+    if (curTok.type == TokenType::Colon) {
+        getNextToken(); // eat ':'
+        
+        if (curTok.type != TokenType::Identifier) {
+            LogError("Expected parent class name after ':'");
+            return nullptr;
+        }
+        
+        ParentName = curTok.text;
+        getNextToken(); // eat parent name
+    }
+    
+    if (curTok.type != TokenType::LBrace) {
+        LogError("Expected '{'");
+        return nullptr;
+    }
+    getNextToken(); // eat '{'
+    
+    std::vector<std::pair<std::string, OType>> Fields;
+    std::vector<std::unique_ptr<FunctionAST>> Methods;
+    std::vector<std::unique_ptr<ConstructorAST>> Constructors;
+    std::vector<std::string> VirtualMethods;
+    
+    while (curTok.type != TokenType::RBrace && curTok.type != TokenType::EoF) {
+        if (curTok.type == TokenType::Virtual) {
+            // Parse virtual method
+            getNextToken(); // eat 'virtual'
+            
+            if (curTok.type != TokenType::Fn) {
+                LogError("Expected 'fn' after 'virtual'");
+                return nullptr;
+            }
+            
+            auto method = ParseDefinition();
+            if (!method) {
+                LogError("Failed to parse virtual method");
+                return nullptr;
+            }
+            
+            // Track virtual method name
+            VirtualMethods.push_back(method->getPrototype()->getName());
+            Methods.push_back(std::move(method));
+            
+        } else if (curTok.type == TokenType::Fn) {
+            auto method = ParseDefinition();
+            if (!method) {
+                LogError("Failed to parse class method");
+                return nullptr;
+            }
+            Methods.push_back(std::move(method));
+        } else if (curTok.type == TokenType::New) {
+            auto constructor = ParseConstructor();
+            if (!constructor) {
+                LogError("Failed to parse class constructor");
+                return nullptr;
+            }
+            Constructors.push_back(std::move(constructor));
+        } else {
+            // Parse field: Type IdentifierList;
+            OType FieldType = ParseType();
+            
+            std::vector<std::string> FieldNames = ParseIdentifierList();
+            if (FieldNames.empty()) {
+                LogError("Expected field name(s)");
+                return nullptr;
+            }
+            
+            if (curTok.type != TokenType::Semicolon) {
+                LogError("Expected ';' after field");
+                return nullptr;
+            }
+            getNextToken(); // eat ';'
+            
+            for (const auto& fieldName : FieldNames) {
+                Fields.push_back({fieldName, FieldType});
+            }
+        }
+    }
+    
+    if (curTok.type != TokenType::RBrace) {
+        LogError("Expected '}'");
+        return nullptr;
+    }
+    getNextToken(); // eat '}'
+    
+    return std::make_unique<ClassDeclAST>(ClassName, ParentName, isOpen, std::move(Fields), std::move(Methods), std::move(Constructors), std::move(VirtualMethods));
+}
+
 bool Parser::ParseTopLevel() {
     if (curTok.type == TokenType::Struct) {
         auto structAST = ParseStruct();
         if (structAST) {
-            structAST->codegen(); // Register the struct type
+            structAST->codegen();
+            return true;
+        }
+        return false;
+    } else if (curTok.type == TokenType::Class || curTok.type == TokenType::Open) {
+        auto classAST = ParseClass();
+        if (classAST) {
+            classAST->codegen();
             return true;
         }
         return false;

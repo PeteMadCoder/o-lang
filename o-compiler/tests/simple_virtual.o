@@ -1,0 +1,12 @@
+open class SimpleClass {
+    int data;
+    
+    virtual fn test() -> int {
+        return 42;
+    }
+}
+
+fn main() -> int {
+    var obj = new SimpleClass();
+    return 0;
+}

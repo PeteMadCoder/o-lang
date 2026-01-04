@@ -1,0 +1,5 @@
+fn main() -> int {
+    var nums = {5};
+    var x = nums[0];
+    return 42;
+}

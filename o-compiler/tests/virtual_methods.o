@@ -1,0 +1,35 @@
+open class Animal {
+    int age;
+    
+    virtual fn speak() -> int {
+        return 1; // Base implementation
+    }
+    
+    fn getAge() -> int {
+        return 10;
+    }
+}
+
+class Dog : Animal {
+    int breed;
+    
+    virtual fn speak() -> int {
+        return 2; // Override implementation
+    }
+    
+    fn wagTail() -> int {
+        return 3;
+    }
+}
+
+fn testVirtualMethods() -> int {
+    var dog = new Dog();
+    var animal = new Animal();
+    
+    return 100;
+}
+
+fn main() -> int {
+    var result = testVirtualMethods();
+    return result;
+}

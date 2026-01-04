@@ -1,0 +1,8 @@
+struct Simple {
+    int data;
+}
+
+fn main() -> int {
+    var obj = new Simple();
+    return 77;
+}

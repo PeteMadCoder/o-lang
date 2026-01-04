@@ -1,0 +1,25 @@
+class Animal {
+    int age;
+    
+    fn getAge() -> int {
+        return 10; // Simplified
+    }
+}
+
+class Dog : Animal {
+    int breed;
+    
+    fn bark() -> int {
+        return 42;
+    }
+}
+
+fn testInheritance() -> int {
+    var dog = new Dog();
+    return 100;
+}
+
+fn main() -> int {
+    var result = testInheritance();
+    return result;
+}

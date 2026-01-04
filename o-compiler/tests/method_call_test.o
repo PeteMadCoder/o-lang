@@ -1,0 +1,23 @@
+struct Point {
+    int x, y;
+    
+    fn getValue() -> int {
+        return 123;
+    }
+}
+
+// Manually call the mangled method with this pointer
+fn Point_getValue(*Point this) -> int;
+
+fn testMethodCall() -> int {
+    var p = Point{}; // This won't work yet, but we can simulate
+    var ptr = &p;
+    
+    // Call the mangled method directly with this pointer
+    var result = Point_getValue(ptr);
+    return result;
+}
+
+fn main() -> int {
+    return testMethodCall();
+}

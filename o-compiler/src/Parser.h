@@ -49,6 +49,15 @@ public:
     
     // string ::= "hello"
     std::unique_ptr<ExprAST> ParseStringExpr();
+    
+    // new ::= 'new' Identifier '(' args ')'
+    std::unique_ptr<ExprAST> ParseNewExpr();
+    
+    // arraytype ::= Type '[' size ']'
+    std::unique_ptr<ExprAST> ParseArrayTypeExpr();
+    
+    // arrayinit ::= '{' expression (',' expression)* '}'
+    std::unique_ptr<ExprAST> ParseArrayInitExpr();
 
     // parenexpr ::= '(' expression ')'
     std::unique_ptr<ExprAST> ParseParenExpr();
@@ -114,7 +123,10 @@ public:
     // struct ::= 'struct' Name '{' field* '}'
     std::unique_ptr<StructDeclAST> ParseStruct();
     
-    // Parse top-level declaration (function or struct)
+    // class ::= 'class' Name [':' Parent] '{' member* '}'
+    std::unique_ptr<ClassDeclAST> ParseClass();
+    
+    // Parse top-level declaration (function, struct, or class)
     bool ParseTopLevel();
     
     // Parse identifier list: name1, name2, name3

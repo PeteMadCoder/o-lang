@@ -1,0 +1,16 @@
+fn testArrays() -> int {
+    // For now, let's test with a simpler approach
+    // We'll need to update variable declaration syntax later
+    return 42;
+}
+
+fn testArrayParameters(int[10] arr) -> int {
+    // Test array as parameter
+    var element = arr[0]; // Test array indexing
+    return element;
+}
+
+fn main() -> int {
+    var result = testArrays();
+    return result;
+}

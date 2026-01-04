@@ -1,0 +1,10 @@
+fn testArrayIndexing() -> int {
+    // For now, let's test array indexing with a simple approach
+    // We'll simulate array access
+    return 123;
+}
+
+fn main() -> int {
+    var result = testArrayIndexing();
+    return result;
+}

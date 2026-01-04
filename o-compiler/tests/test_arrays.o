@@ -1,0 +1,10 @@
+fn main() -> int {
+    // Array initialization with type inference
+    var nums = {10, 20, 30};
+    
+    // Array access
+    var first = nums[0];
+    var second = nums[1];
+    
+    return first + second;
+}
