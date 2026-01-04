@@ -1,0 +1,53 @@
+fn putchar(int c) -> int;
+
+fn print_int(int n) -> int {
+    if (n < 0) {
+        putchar(45); // '-'
+        n = 0 - n;
+    }
+    if (n > 9) {
+        print_int(n / 10);
+    }
+    // Manual modulo
+    var digit = n - (n / 10) * 10;
+    putchar(digit + 48); // '0'
+    return 0;
+}
+
+fn print_newline() -> int {
+    putchar(10);
+    return 0;
+}
+
+// Function accepting a Slice (any size array)
+fn print_array(int[] arr) -> int {
+    print_int(arr.len);
+    putchar(58); // ':'
+    putchar(32); // ' '
+    
+    var i = 0;
+    while (i < arr.len) {
+        print_int(arr[i]);
+        putchar(32);
+        i = i + 1;
+    }
+    print_newline();
+    return 0;
+}
+
+fn main() -> int {
+    // 1. Fixed Array
+    var fixed: int[3] = {10, 20, 30};
+    print_array(fixed); // Expected: 3: 10 20 30
+    
+    // 2. Dynamic Array
+    var n = 4;
+    var dyn = new int[n];
+    dyn[0] = 1;
+    dyn[1] = 2;
+    dyn[2] = 4;
+    dyn[3] = 8;
+    print_array(dyn); // Expected: 4: 1 2 4 8
+    
+    return 0;
+}

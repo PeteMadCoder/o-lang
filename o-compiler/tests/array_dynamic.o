@@ -1,0 +1,41 @@
+fn putchar(int c) -> int;
+
+fn print_int(int n) -> int {
+    if (n < 0) {
+        putchar(45); // '-'
+        n = 0 - n;
+    }
+    if (n > 9) {
+        print_int(n / 10);
+    }
+    // Manual modulo: n % 10 == n - (n / 10) * 10
+    var digit = n - (n / 10) * 10;
+    putchar(digit + 48); // '0'
+    return 0;
+}
+
+fn print_newline() -> int {
+    putchar(10);
+    return 0;
+}
+
+fn main() -> int {
+    // Array of size 5
+    var a: int[5] = {1, 2, 3, 4, 5};
+    
+    // Array of size 10
+    var b: int[10] = {10, 20, 30, 40, 50, 60, 70, 80, 90, 100};
+    
+    // Test Read from size 5
+    print_int(a[4]); // Expected: 5
+    print_newline();
+    
+    // Test Read from size 10 (would fail if hardcoded to 3 or something else)
+    print_int(b[9]); // Expected: 100
+    print_newline();
+    
+    // Test AddressOf (uses codegenAddress)
+    var p = &a[2]; // Should point to 3
+    
+    return 0;
+}

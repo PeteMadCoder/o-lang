@@ -1,0 +1,48 @@
+fn putchar(int c) -> int;
+
+fn print_int(int n) -> int {
+    if (n < 0) {
+        putchar(45); // '-'
+        n = 0 - n;
+    }
+    if (n > 9) {
+        print_int(n / 10);
+    }
+    var digit = n - (n / 10) * 10;
+    putchar(digit + 48); // '0'
+    return 0;
+}
+
+fn print_newline() -> int {
+    putchar(10);
+    return 0;
+}
+
+fn main() -> int {
+    var x = 2;
+    
+    // Match statement
+    match (x) {
+        1 => { print_int(111); print_newline(); }
+        2 => { print_int(222); print_newline(); }
+        _ => { print_int(999); print_newline(); }
+    }
+    
+    // Match expression
+    var y = match (x) {
+        1 => 10
+        2 => 20
+        _ => 30
+    };
+    print_int(y); // Expected 20
+    print_newline();
+    
+    // Wildcard test
+    var z = 5;
+    match (z) {
+        1 => { print_int(1); }
+        _ => { print_int(555); print_newline(); }
+    }
+    
+    return 0;
+}

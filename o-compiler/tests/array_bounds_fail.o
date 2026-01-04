@@ -1,0 +1,8 @@
+fn main() -> int {
+    var a: int[3] = {1, 2, 3};
+    
+    // This should crash the program with a trap
+    var val = a[10]; 
+    
+    return val;
+}

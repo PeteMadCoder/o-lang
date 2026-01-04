@@ -9,6 +9,7 @@ static std::unordered_map<std::string, TokenType> keywords = {
     {"while", TokenType::While}, {"class", TokenType::Class}, {"struct", TokenType::Struct},
     {"module", TokenType::Module}, {"import", TokenType::Import}, {"new", TokenType::New},
     {"unsafe", TokenType::Unsafe}, {"open", TokenType::Open}, {"virtual", TokenType::Virtual},
+    {"match", TokenType::Match}, // Added match
     {"int", TokenType::TypeInt}, {"float", TokenType::TypeFloat},
     {"bool", TokenType::TypeBool}, {"void", TokenType::TypeVoid},
     {"char", TokenType::TypeChar}, {"byte", TokenType::TypeByte},
@@ -147,6 +148,7 @@ Token Lexer::next_token() {
         case ';': return atom(TokenType::Semicolon);
         case ':': return atom(TokenType::Colon);
         case ',': return atom(TokenType::Comma);
+        case '.': return atom(TokenType::Dot);
         case '+': return atom(TokenType::Plus);
         case '*': return atom(TokenType::Star);
         case '/': return atom(TokenType::Slash); // Added Slash
@@ -171,6 +173,7 @@ Token Lexer::next_token() {
             return atom(TokenType::Minus);
         case '=':
             if (peek() == '=') { advance(); return Token{TokenType::EqualEqual, "==", line, col}; }
+            if (peek() == '>') { advance(); return Token{TokenType::Arrow, "=>", line, col}; }
             return atom(TokenType::Equal);
         case '!':
             if (peek() == '=') { advance(); return Token{TokenType::NotEqual, "!=", line, col}; }

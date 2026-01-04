@@ -1,0 +1,46 @@
+fn putchar(int c) -> int;
+
+fn print_int(int n) -> int {
+    if (n < 0) {
+        putchar(45); // '-'
+        n = 0 - n;
+    }
+    if (n > 9) {
+        print_int(n / 10);
+    }
+    // Manual modulo
+    var digit = n - (n / 10) * 10;
+    putchar(digit + 48); // '0'
+    return 0;
+}
+
+fn print_newline() -> int {
+    putchar(10);
+    return 0;
+}
+
+fn main() -> int {
+    // Dynamic size
+    var n = 10;
+    var a = new int[n];
+    
+    // Check length
+    print_int(a.len); // Expected: 10
+    print_newline();
+    
+    // Write
+    var i = 0;
+    while (i < n) {
+        a[i] = i * 10;
+        i = i + 1;
+    }
+    
+    // Read
+    print_int(a[5]); // Expected: 50
+    print_newline();
+    
+    print_int(a[9]); // Expected: 90
+    print_newline();
+    
+    return 0;
+}

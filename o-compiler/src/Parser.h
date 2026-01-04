@@ -71,6 +71,9 @@ public:
     // ifexpr ::= 'if' '(' expression ')' block ('else' block)?
     std::unique_ptr<ExprAST> ParseIfExpr();
 
+    // matchexpr ::= 'match' '(' expression ')' '{' case* '}'
+    std::unique_ptr<ExprAST> ParseMatchExpr();
+
     // primary
     //   ::= identifierexpr
     //   ::= numberexpr

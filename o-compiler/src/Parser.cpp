@@ -22,6 +22,7 @@ Parser::Parser(Lexer& lex) : lexer(lex) {
 
 void Parser::getNextToken() {
     curTok = lexer.next_token();
+    // std::cerr << "Token: " << curTok.text << " (" << (int)curTok.type << ")\n";
 }
 
 int Parser::GetTokPrecedence() {
@@ -110,17 +111,17 @@ OType Parser::ParseType() {
     // Apply pointer depth
     baseType.pointerDepth = pointerDepth;
     
-    // Check for array syntax: Type[size]
-    if (curTok.type == TokenType::LBracket) {
+    // Check for array syntax: Type[size][size]...
+    while (curTok.type == TokenType::LBracket) {
         getNextToken(); // eat '['
         
         if (curTok.type == TokenType::Integer) {
             int arraySize = std::stoi(curTok.text);
-            baseType.arraySize = arraySize;
+            baseType.arraySizes.push_back(arraySize);
             getNextToken(); // eat size
         } else {
-            // Empty brackets [] for unsized arrays (future feature)
-            baseType.arraySize = -1; // Mark as unsized
+            // Empty brackets [] for unsized arrays
+            baseType.arraySizes.push_back(-1); // Mark as unsized
         }
         
         if (curTok.type != TokenType::RBracket) {
@@ -175,12 +176,45 @@ std::unique_ptr<ExprAST> Parser::ParseNewExpr() {
     if (curTok.type != TokenType::New) return nullptr;
     getNextToken(); // eat 'new'
     
-    if (curTok.type != TokenType::Identifier) {
-        return LogError("Expected class name after 'new'");
+    // Parse Type (simplified for now: Identifier or Primitive)
+    OType ElementType;
+    std::string ClassName;
+    
+    if (curTok.type == TokenType::Identifier) {
+        ClassName = curTok.text;
+        // Check if it's a struct type
+        if (TypeRegistry::getInstance().hasStruct(ClassName)) {
+            ElementType = OType(BaseType::Struct, 0, ClassName);
+        } else {
+             // Assume class for now or void
+             ElementType = OType(BaseType::Void); // Placeholder
+        }
+        getNextToken();
+    } else if (curTok.type == TokenType::TypeInt) { ElementType = OType(BaseType::Int); getNextToken(); }
+    else if (curTok.type == TokenType::TypeFloat) { ElementType = OType(BaseType::Float); getNextToken(); }
+    else if (curTok.type == TokenType::TypeBool) { ElementType = OType(BaseType::Bool); getNextToken(); }
+    else if (curTok.type == TokenType::TypeChar) { ElementType = OType(BaseType::Char); getNextToken(); }
+    else if (curTok.type == TokenType::TypeByte) { ElementType = OType(BaseType::Byte); getNextToken(); }
+    else {
+        return LogError("Expected type after 'new'");
+    }
+
+    // Check for Array Allocation: new Type[Expr]
+    if (curTok.type == TokenType::LBracket) {
+        getNextToken(); // eat '['
+        
+        auto SizeExpr = ParseExpression();
+        if (!SizeExpr) return nullptr;
+        
+        if (curTok.type != TokenType::RBracket)
+            return LogError("Expected ']' after array size");
+        getNextToken(); // eat ']'
+        
+        return std::make_unique<NewArrayExprAST>(ElementType, std::move(SizeExpr));
     }
     
-    std::string ClassName = curTok.text;
-    getNextToken(); // eat class name
+    // Object Instantiation: new Class(...)
+    if (ClassName.empty()) return LogError("Cannot instantiate primitive type with '()'");
     
     if (curTok.type != TokenType::LParen) {
         return LogError("Expected '(' after class name");
@@ -262,14 +296,6 @@ std::unique_ptr<ExprAST> Parser::ParseIdentifierExpr() {
     std::string IdName = curTok.text;
     getNextToken(); // eat identifier
 
-    // Check for Assignment: x = 10
-    if (curTok.type == TokenType::Equal) {
-            getNextToken(); // eat '='
-            auto RHS = ParseExpression();
-            if (!RHS) return nullptr;
-            return std::make_unique<AssignmentExprAST>(IdName, std::move(RHS));
-    }
-
     // Simple variable ref
     if (curTok.type != TokenType::LParen)
         return std::make_unique<VariableExprAST>(IdName);
@@ -330,11 +356,72 @@ std::unique_ptr<ExprAST> Parser::ParseIfExpr() {
     return std::make_unique<IfExprAST>(std::move(Cond), std::move(Then), std::move(Else));
 }
 
+std::unique_ptr<ExprAST> Parser::ParseMatchExpr() {
+    getNextToken(); // eat 'match'
+    
+    if (curTok.type != TokenType::LParen) 
+        return LogError("Expected '(' after match");
+    getNextToken(); // eat '('
+    
+    auto Cond = ParseExpression();
+    if (!Cond) return nullptr;
+    
+    if (curTok.type != TokenType::RParen)
+        return LogError("Expected ')' after match condition");
+    getNextToken(); // eat ')'
+    
+    if (curTok.type != TokenType::LBrace)
+        return LogError("Expected '{' to start match cases");
+    getNextToken(); // eat '{'
+    
+    std::vector<MatchCase> Cases;
+    
+    // Parse cases until '}'
+    while (curTok.type != TokenType::RBrace && curTok.type != TokenType::EoF) {
+        std::unique_ptr<ExprAST> Pattern = nullptr;
+        
+        // Parse Pattern: Literal or '_'
+        if (curTok.type == TokenType::Identifier && curTok.text == "_") {
+            // Wildcard
+            Pattern = nullptr;
+            getNextToken(); // eat '_'
+        } else if (curTok.type == TokenType::Integer || curTok.type == TokenType::Float ||
+                   curTok.type == TokenType::CharLit || curTok.type == TokenType::StringLit ||
+                   curTok.type == TokenType::True || curTok.type == TokenType::False) {
+            // Literal - assume ParsePrimary handles literal tokens correctly without consuming extra if we peek?
+            // ParsePrimary consumes the token.
+            Pattern = ParsePrimary(); 
+            if (!Pattern) return nullptr;
+        } else {
+            return LogError("Expected literal or '_' as match pattern");
+        }
+        
+        // Expect '=>'
+        if (curTok.type != TokenType::Arrow) {
+            return LogError("Expected '=>' after pattern");
+        }
+        getNextToken(); // eat '=>'
+        
+        // Parse Body (Statement or Block)
+        auto Body = ParseStatement();
+        if (!Body) return nullptr;
+        
+        Cases.emplace_back(std::move(Pattern), std::move(Body));
+    }
+    
+    if (curTok.type != TokenType::RBrace)
+        return LogError("Expected '}' to end match cases");
+    getNextToken(); // eat '}'
+    
+    return std::make_unique<MatchExprAST>(std::move(Cond), std::move(Cases));
+}
+
 std::unique_ptr<ExprAST> Parser::ParsePrimary() {
     switch (curTok.type) {
         case TokenType::True:       getNextToken(); return std::make_unique<BoolExprAST>(true);
         case TokenType::False:      getNextToken(); return std::make_unique<BoolExprAST>(false);
         case TokenType::If:         return ParseIfExpr();
+        case TokenType::Match:      return ParseMatchExpr(); // Handle match
         case TokenType::Unsafe:     return ParseUnsafeBlock();
         case TokenType::New:        return ParseNewExpr();
         case TokenType::Identifier: return ParseIdentifierExpr();
@@ -458,12 +545,17 @@ std::unique_ptr<ExprAST> Parser::ParseVarDecl() {
         HasExplicitType = true;
     }
     
-    if (curTok.type != TokenType::Equal)
+    std::unique_ptr<ExprAST> Init = nullptr;
+    if (curTok.type == TokenType::Equal) {
+        getNextToken(); // eat '='
+        Init = ParseExpression();
+        if (!Init) return nullptr;
+    } else if (HasExplicitType && curTok.type == TokenType::Semicolon) {
+        // Declaration without initialization (e.g. var x: int;)
+        // We will handle zero-init in codegen
+    } else {
         return LogError("Expected '=' in variable declaration");
-    getNextToken(); // eat '='
-    
-    auto Init = ParseExpression();
-    if (!Init) return nullptr;
+    }
     
     if (curTok.type != TokenType::Semicolon) 
         return LogError("Expected ';' after variable declaration");
@@ -521,9 +613,22 @@ std::unique_ptr<ExprAST> Parser::ParseStatement() {
         return ParseVarDecl();
     }
     
+    // Block statement
+    if (curTok.type == TokenType::LBrace) {
+        return ParseBlock();
+    }
+    
     // Expression statement
     auto Expr = ParseExpression();
     if (!Expr) return nullptr;
+    
+    // Check for assignment: LHS = RHS
+    if (curTok.type == TokenType::Equal) {
+        getNextToken(); // eat '='
+        auto RHS = ParseExpression();
+        if (!RHS) return nullptr;
+        Expr = std::make_unique<AssignmentExprAST>(std::move(Expr), std::move(RHS));
+    }
     
     if (curTok.type == TokenType::Semicolon) {
         getNextToken(); // eat ';'

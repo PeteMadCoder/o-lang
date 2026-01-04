@@ -1,0 +1,57 @@
+fn putchar(int c) -> int;
+
+fn print_int(int n) -> int {
+    if (n < 0) {
+        putchar(45); // '-'
+        n = 0 - n;
+    }
+    if (n > 9) {
+        print_int(n / 10);
+    }
+    // Manual modulo
+    var digit = n - (n / 10) * 10;
+    putchar(digit + 48); // '0'
+    return 0;
+}
+
+fn print_newline() -> int {
+    putchar(10);
+    return 0;
+}
+
+fn main() -> int {
+    // 3x3 array (flat initialization for now because parser lacks nested braces support?)
+    // Actually parser supports {expr, expr...}. Can we nest?
+    // Let's try simple flat assignment first to test indexing logic.
+    // Parser for "int[3][3]" might work, but ArrayInit might not support {{...}}.
+    // So let's declare variable then assign.
+    
+    // Note: Parser might fail on "int[3][3]" type declaration if not recursive enough.
+    // ParseType handles one level of []. Let's check ParseType.
+    // It loops: while LBracket... so it handles int[3][3].
+    
+    var m: int[3][3]; 
+    // Manual init
+    m[0][0] = 1;
+    m[0][1] = 2;
+    m[0][2] = 3;
+    
+    m[1][0] = 4;
+    m[1][1] = 5;
+    m[1][2] = 6;
+    
+    m[2][0] = 7;
+    m[2][1] = 8;
+    m[2][2] = 9;
+    
+    print_int(m[0][0]); // 1
+    print_newline();
+    
+    print_int(m[1][1]); // 5
+    print_newline();
+    
+    print_int(m[2][2]); // 9
+    print_newline();
+    
+    return 0;
+}

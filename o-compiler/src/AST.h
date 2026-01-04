@@ -29,22 +29,39 @@ enum class BaseType { Void, Int, Float, Bool, Char, Byte, Struct };
 struct OType {
     BaseType base;
     int pointerDepth = 0; // 0 = value, 1 = *, 2 = **, etc.
-    int arraySize = 0; // 0 = not array, >0 = array size
+    std::vector<int> arraySizes; // Empty = not array, [3] = 1D, [3,3] = 2D
     std::string structName; // For struct types
     
-    OType(BaseType b = BaseType::Void, int depth = 0, const std::string& name = "", int arrSize = 0) 
-        : base(b), pointerDepth(depth), arraySize(arrSize), structName(name) {}
+    OType(BaseType b = BaseType::Void, int depth = 0, const std::string& name = "", std::vector<int> arrSizes = {}) 
+        : base(b), pointerDepth(depth), arraySizes(arrSizes), structName(name) {}
+    
+    // Compatibility constructor for single dimension code
+    OType(BaseType b, int depth, const std::string& name, int arrSize) 
+        : base(b), pointerDepth(depth), structName(name) {
+        if (arrSize > 0) arraySizes.push_back(arrSize);
+    }
     
     bool isPointer() const { return pointerDepth > 0; }
-    bool isArray() const { return arraySize > 0; }
+    bool isArray() const { return !arraySizes.empty(); }
+    
     OType getPointeeType() const { 
-        return OType(base, pointerDepth - 1, structName, arraySize); 
+        return OType(base, pointerDepth - 1, structName, arraySizes); 
     }
+    
     OType getPointerTo() const { 
-        return OType(base, pointerDepth + 1, structName, arraySize); 
+        return OType(base, pointerDepth + 1, structName, arraySizes); 
     }
+    
     OType getElementType() const {
-        return OType(base, pointerDepth, structName, 0); // Remove array dimension
+        if (arraySizes.empty()) return *this;
+        std::vector<int> newSizes = arraySizes;
+        newSizes.erase(newSizes.begin());
+        return OType(base, pointerDepth, structName, newSizes);
+    }
+
+    uint64_t getArrayNumElements() const {
+        if (arraySizes.empty()) return 0;
+        return arraySizes[0];
     }
 };
 
@@ -137,6 +154,9 @@ public:
     
     // The magical method that generates LLVM code
     virtual llvm::Value *codegen() = 0;
+    
+    // Optional: Get address for l-value usage (assignment, & operator)
+    virtual llvm::Value *codegenAddress() { return nullptr; }
 };
 
 // 2a. Boolean Node
@@ -165,6 +185,7 @@ public:
     NumberExprAST(double Val, OType Type) : Val(Val), Type(Type) {}
     llvm::Value *codegen() override;
     OType getType() const { return Type; } // Type getter
+    double getVal() const { return Val; } // Value getter
 };
 
 /// StringExprAST - Expression class for string literals like "hello"
@@ -275,6 +296,16 @@ public:
     llvm::Value *codegen() override;
 };
 
+/// NewArrayExprAST - Expression for array allocation (new int[size])
+class NewArrayExprAST : public ExprAST {
+    OType ElementType;
+    std::unique_ptr<ExprAST> Size;
+public:
+    NewArrayExprAST(OType ElementType, std::unique_ptr<ExprAST> Size)
+        : ElementType(ElementType), Size(std::move(Size)) {}
+    llvm::Value *codegen() override;
+};
+
 /// IndexExprAST - Expression for array indexing (arr[index])
 class IndexExprAST : public ExprAST {
     std::unique_ptr<ExprAST> Array;
@@ -364,6 +395,25 @@ public:
     llvm::Value *codegen() override;
 };
 
+// 4b. Match Expression Node
+struct MatchCase {
+    std::unique_ptr<ExprAST> Pattern; // nullptr means wildcard '_'
+    std::unique_ptr<ExprAST> Body;
+    
+    MatchCase(std::unique_ptr<ExprAST> Pat, std::unique_ptr<ExprAST> B)
+        : Pattern(std::move(Pat)), Body(std::move(B)) {}
+};
+
+class MatchExprAST : public ExprAST {
+    std::unique_ptr<ExprAST> Cond;
+    std::vector<MatchCase> Cases;
+public:
+    MatchExprAST(std::unique_ptr<ExprAST> Cond, std::vector<MatchCase> Cases)
+        : Cond(std::move(Cond)), Cases(std::move(Cases)) {}
+    
+    llvm::Value *codegen() override;
+};
+
 // 5. Var Declaration Node: var x = 10; or var arr = int[10];
 class VarDeclExprAST : public ExprAST {
     std::string Name;
@@ -377,13 +427,13 @@ public:
     llvm::Value *codegen() override;
 };
 
-// 6. Assignment Node: x = 20;
+// 6. Assignment Node: x = 20; or arr[i] = 20;
 class AssignmentExprAST : public ExprAST {
-    std::string Name;
+    std::unique_ptr<ExprAST> LHS;
     std::unique_ptr<ExprAST> RHS;
 public:
-    AssignmentExprAST(const std::string &Name, std::unique_ptr<ExprAST> RHS)
-        : Name(Name), RHS(std::move(RHS)) {}
+    AssignmentExprAST(std::unique_ptr<ExprAST> LHS, std::unique_ptr<ExprAST> RHS)
+        : LHS(std::move(LHS)), RHS(std::move(RHS)) {}
     llvm::Value *codegen() override;
 };
 
