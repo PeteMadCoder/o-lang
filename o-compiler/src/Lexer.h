@@ -7,7 +7,7 @@ enum class TokenType {
     EoF,
 
     // Keywords
-    Fn, Var, Mut, Return, If, Else, While, Class, Struct, Module, Import,
+    Fn, Var, Mut, Return, If, Else, While, For, Class, Struct, Module, Import,
     Open, Virtual, Override, New, Shared, Unsafe, Match,
 
     // Types

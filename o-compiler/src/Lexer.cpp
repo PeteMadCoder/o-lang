@@ -6,7 +6,7 @@
 static std::unordered_map<std::string, TokenType> keywords = {
     {"fn", TokenType::Fn}, {"var", TokenType::Var}, {"mut", TokenType::Mut},
     {"return", TokenType::Return}, {"if", TokenType::If}, {"else", TokenType::Else},
-    {"while", TokenType::While}, {"class", TokenType::Class}, {"struct", TokenType::Struct},
+    {"while", TokenType::While}, {"for", TokenType::For}, {"class", TokenType::Class}, {"struct", TokenType::Struct},
     {"module", TokenType::Module}, {"import", TokenType::Import}, {"new", TokenType::New},
     {"unsafe", TokenType::Unsafe}, {"open", TokenType::Open}, {"virtual", TokenType::Virtual},
     {"match", TokenType::Match}, // Added match

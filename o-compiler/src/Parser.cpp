@@ -524,6 +524,15 @@ std::unique_ptr<ExprAST> Parser::ParseBinOpRHS(int ExprPrec, std::unique_ptr<Exp
 std::unique_ptr<ExprAST> Parser::ParseExpression() {
     auto LHS = ParseUnary();
     if (!LHS) return nullptr;
+    
+    // Check for assignment
+    if (curTok.type == TokenType::Equal) {
+        getNextToken(); // eat '='
+        auto RHS = ParseExpression();
+        if (!RHS) return nullptr;
+        return std::make_unique<AssignmentExprAST>(std::move(LHS), std::move(RHS));
+    }
+    
     return ParseBinOpRHS(0, std::move(LHS));
 }
 
@@ -587,6 +596,55 @@ std::unique_ptr<ExprAST> Parser::ParseWhileStmt() {
     return std::make_unique<WhileExprAST>(std::move(Cond), std::move(Body));
 }
 
+std::unique_ptr<ExprAST> Parser::ParseForStmt() {
+    getNextToken(); // eat 'for'
+    
+    if (curTok.type != TokenType::LParen)
+        return LogError("Expected '(' after for");
+    getNextToken(); // eat '('
+    
+    // Parse Init
+    std::unique_ptr<ExprAST> Init = nullptr;
+    if (curTok.type == TokenType::Semicolon) {
+        getNextToken(); // eat ';'
+    } else {
+        Init = ParseStatement(); // Handles VarDecl or ExpressionStmt
+        if (!Init) return nullptr;
+    }
+    
+    // Parse Cond
+    std::unique_ptr<ExprAST> Cond = nullptr;
+    if (curTok.type != TokenType::Semicolon) {
+        Cond = ParseExpression();
+        if (!Cond) return nullptr;
+    } else {
+        Cond = std::make_unique<BoolExprAST>(true); // Infinite loop
+    }
+    
+    if (curTok.type != TokenType::Semicolon)
+        return LogError("Expected ';' after for condition");
+    getNextToken(); // eat ';'
+    
+    // Parse Step
+    std::unique_ptr<ExprAST> Step = nullptr;
+    if (curTok.type != TokenType::RParen) {
+        Step = ParseExpression();
+        if (!Step) return nullptr;
+    }
+    
+    if (curTok.type != TokenType::RParen)
+        return LogError("Expected ')' after for step");
+    getNextToken(); // eat ')'
+    
+    if (curTok.type != TokenType::LBrace)
+        return LogError("Expected '{' for loop body");
+        
+    auto Body = ParseBlock();
+    if (!Body) return nullptr;
+    
+    return std::make_unique<ForExprAST>(std::move(Init), std::move(Cond), std::move(Step), std::move(Body));
+}
+
 std::unique_ptr<ExprAST> Parser::ParseReturnStmt() {
     getNextToken(); // eat 'return'
     
@@ -609,6 +667,9 @@ std::unique_ptr<ExprAST> Parser::ParseStatement() {
     if (curTok.type == TokenType::While) {
         return ParseWhileStmt();
     }
+    if (curTok.type == TokenType::For) {
+        return ParseForStmt();
+    }
     if (curTok.type == TokenType::Var) {
         return ParseVarDecl();
     }
@@ -621,14 +682,6 @@ std::unique_ptr<ExprAST> Parser::ParseStatement() {
     // Expression statement
     auto Expr = ParseExpression();
     if (!Expr) return nullptr;
-    
-    // Check for assignment: LHS = RHS
-    if (curTok.type == TokenType::Equal) {
-        getNextToken(); // eat '='
-        auto RHS = ParseExpression();
-        if (!RHS) return nullptr;
-        Expr = std::make_unique<AssignmentExprAST>(std::move(Expr), std::move(RHS));
-    }
     
     if (curTok.type == TokenType::Semicolon) {
         getNextToken(); // eat ';'

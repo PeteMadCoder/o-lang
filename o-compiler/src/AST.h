@@ -177,7 +177,21 @@ public:
     llvm::Value *codegen() override;
 };
 
-// 2c. Updated Number Node
+// 2c. For Loop Node
+class ForExprAST : public ExprAST {
+    std::unique_ptr<ExprAST> Init;
+    std::unique_ptr<ExprAST> Cond;
+    std::unique_ptr<ExprAST> Step;
+    std::unique_ptr<ExprAST> Body;
+public:
+    ForExprAST(std::unique_ptr<ExprAST> Init, std::unique_ptr<ExprAST> Cond,
+               std::unique_ptr<ExprAST> Step, std::unique_ptr<ExprAST> Body)
+        : Init(std::move(Init)), Cond(std::move(Cond)),
+          Step(std::move(Step)), Body(std::move(Body)) {}
+    llvm::Value *codegen() override;
+};
+
+// 2d. Updated Number Node
 class NumberExprAST : public ExprAST {
     double Val;
     OType Type; // Store the type

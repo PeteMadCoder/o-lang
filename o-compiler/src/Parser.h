@@ -105,6 +105,9 @@ public:
     // whilestmt ::= 'while' '(' expression ')' block
     std::unique_ptr<ExprAST> ParseWhileStmt();
 
+    // forstmt ::= 'for' '(' (statement | ';') expression? ';' expression? ')' block
+    std::unique_ptr<ExprAST> ParseForStmt();
+
     // returnstmt ::= 'return' expression? ';'
     std::unique_ptr<ExprAST> ParseReturnStmt();
     

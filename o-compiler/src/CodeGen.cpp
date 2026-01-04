@@ -511,6 +511,71 @@ llvm::Value *WhileExprAST::codegen() {
     return llvm::Constant::getNullValue(llvm::Type::getInt32Ty(*TheContext));
 }
 
+llvm::Value *ForExprAST::codegen() {
+    llvm::Function *TheFunction = Builder->GetInsertBlock()->getParent();
+
+    // 1. Emit Init
+    if (Init) {
+        if (!Init->codegen()) return nullptr;
+    }
+
+    // Prepare Blocks
+    llvm::BasicBlock *LoopCondBB = llvm::BasicBlock::Create(*TheContext, "loopcond", TheFunction);
+    llvm::BasicBlock *LoopBodyBB = llvm::BasicBlock::Create(*TheContext, "loopbody");
+    llvm::BasicBlock *LoopEndBB = llvm::BasicBlock::Create(*TheContext, "looplatch");
+    llvm::BasicBlock *AfterLoopBB = llvm::BasicBlock::Create(*TheContext, "afterloop");
+
+    // Jump to Condition
+    Builder->CreateBr(LoopCondBB);
+
+    // 2. Loop Condition
+    Builder->SetInsertPoint(LoopCondBB);
+    llvm::Value *CondV = nullptr;
+    if (Cond) {
+        CondV = Cond->codegen();
+        if (!CondV) return nullptr;
+        
+        // Convert to bool
+        if (CondV->getType()->isDoubleTy()) {
+            CondV = Builder->CreateFCmpONE(CondV, llvm::ConstantFP::get(*TheContext, llvm::APFloat(0.0)), "loopcond");
+        } else if (CondV->getType()->isIntegerTy() && !CondV->getType()->isIntegerTy(1)) {
+            CondV = Builder->CreateICmpNE(CondV, llvm::ConstantInt::get(CondV->getType(), 0), "loopcond");
+        }
+    } else {
+        // Infinite loop
+        CondV = llvm::ConstantInt::get(llvm::Type::getInt1Ty(*TheContext), 1);
+    }
+
+    Builder->CreateCondBr(CondV, LoopBodyBB, AfterLoopBB);
+
+    // 3. Loop Body
+    TheFunction->insert(TheFunction->end(), LoopBodyBB);
+    Builder->SetInsertPoint(LoopBodyBB);
+    
+    if (!Body->codegen()) return nullptr;
+    
+    // Jump to Latch (Step) if not terminated
+    if (!Builder->GetInsertBlock()->getTerminator())
+        Builder->CreateBr(LoopEndBB);
+
+    // 4. Latch (Step)
+    TheFunction->insert(TheFunction->end(), LoopEndBB);
+    Builder->SetInsertPoint(LoopEndBB);
+    
+    if (Step) {
+        if (!Step->codegen()) return nullptr;
+    }
+    
+    // Back to Cond
+    Builder->CreateBr(LoopCondBB);
+
+    // 5. After Loop
+    TheFunction->insert(TheFunction->end(), AfterLoopBB);
+    Builder->SetInsertPoint(AfterLoopBB);
+
+    return llvm::Constant::getNullValue(llvm::Type::getInt32Ty(*TheContext));
+}
+
 llvm::Function *PrototypeAST::codegen() {
     std::vector<llvm::Type *> LLVMArgs;
     for (auto &ArgPair : Args) {
