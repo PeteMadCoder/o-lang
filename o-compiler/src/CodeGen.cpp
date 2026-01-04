@@ -10,6 +10,7 @@ std::unique_ptr<llvm::Module> TheModule;
 struct ScopeLayer {
     std::map<std::string, llvm::AllocaInst *> values;
     std::map<std::string, OType> types;
+    std::vector<llvm::AllocaInst *> cleanupVars; // Variables to free on exit
 };
 
 std::vector<ScopeLayer> ScopeStack;
@@ -17,16 +18,62 @@ std::map<std::string, OType> FunctionReturnTypes;
 
 std::unordered_map<std::string, llvm::StructType*> StructTypes;
 
+llvm::Function *getFreeFunc() {
+    llvm::Function *FreeF = TheModule->getFunction("free");
+    if (!FreeF) {
+        std::vector<llvm::Type*> Args;
+        Args.push_back(llvm::PointerType::get(*TheContext, 0)); // void* (opaque ptr)
+        llvm::FunctionType *FT = llvm::FunctionType::get(
+            llvm::Type::getVoidTy(*TheContext), Args, false);
+        FreeF = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "free", TheModule.get());
+    }
+    return FreeF;
+}
+
 void EnterScope() {
     ScopeStack.push_back(ScopeLayer());
 }
 
+// Helper to emit cleanup code for a scope layer
+void EmitCleanup(const ScopeLayer& layer) {
+    // Check if the current block is terminated. If so, we can't emit instructions.
+    // However, for Return statements, we might be emitting before the ret?
+    // This helper just appends to the current insert block.
+    // Caller must ensure insertion point is valid.
+    
+    if (Builder->GetInsertBlock()->getTerminator()) return;
+
+    for (auto* alloca : layer.cleanupVars) {
+        // Load the struct
+        llvm::Value* sliceVal = Builder->CreateLoad(alloca->getAllocatedType(), alloca, "cleanup_load");
+        
+        // Extract the pointer (index 1)
+        llvm::Value* ptrVal = Builder->CreateExtractValue(sliceVal, 1, "cleanup_ptr");
+        
+        // Cast to ptr for free (opaque pointers make this simple, but bitcast keeps it explicit if needed)
+        llvm::Value* voidPtr = ptrVal; 
+        if (ptrVal->getType() != llvm::PointerType::get(*TheContext, 0)) {
+             voidPtr = Builder->CreateBitCast(ptrVal, llvm::PointerType::get(*TheContext, 0), "cleanup_cast");
+        }
+        
+        // Call free
+        Builder->CreateCall(getFreeFunc(), {voidPtr});
+    }
+}
+
 void ExitScope() {
     if (!ScopeStack.empty()) {
+        auto& layer = ScopeStack.back();
+        EmitCleanup(layer);
         ScopeStack.pop_back();
     } else {
         fprintf(stderr, "Error: Scope stack underflow\n");
     }
+}
+
+void RegisterCleanup(llvm::AllocaInst* var) {
+    if (ScopeStack.empty()) EnterScope();
+    ScopeStack.back().cleanupVars.push_back(var);
 }
 
 void AddVariable(const std::string& name, llvm::AllocaInst* val) {
@@ -227,8 +274,16 @@ llvm::Value *VarDeclExprAST::codegen() {
     
     AddVariable(Name, Alloca);
     
-    if (HasExplicitType) AddVariableType(Name, ExplicitType);
-    else if (Init) AddVariableType(Name, Init->getOType());
+    OType VarType;
+    if (HasExplicitType) VarType = ExplicitType;
+    else if (Init) VarType = Init->getOType();
+    
+    AddVariableType(Name, VarType);
+    
+    // RAII Registration: If type is Slice (Dynamic Array), register for cleanup
+    if (VarType.isArray() && VarType.getArrayNumElements() == -1) {
+        RegisterCleanup(Alloca);
+    }
     
     return Alloca; // Return the address
 }
@@ -255,12 +310,68 @@ llvm::Value *ReturnExprAST::codegen() {
     if (RetVal) {
         V = RetVal->codegen();
         if (!V) return nullptr;
+    }
+    
+    // RAII: Cleanup all scopes before returning
+    // Iterate in reverse (innermost to outermost)
+    for (auto it = ScopeStack.rbegin(); it != ScopeStack.rend(); ++it) {
+        EmitCleanup(*it);
+    }
+
+    if (RetVal) {
         Builder->CreateRet(V);
     } else {
         Builder->CreateRetVoid();
         V = llvm::Constant::getNullValue(llvm::Type::getInt32Ty(*TheContext)); // Dummy
     }
     return V;
+}
+
+llvm::Value *DeleteExprAST::codegen() {
+    llvm::Value *Val = Operand->codegen();
+    if (!Val) return nullptr;
+    
+    // If we are deleting a variable, we must remove it from the RAII cleanup list to avoid double-free
+    if (auto VarExpr = dynamic_cast<VariableExprAST*>(Operand.get())) {
+        llvm::AllocaInst* Alloca = GetVariable(VarExpr->getName());
+        if (Alloca) {
+            // Search from top of stack down
+            for (auto it = ScopeStack.rbegin(); it != ScopeStack.rend(); ++it) {
+                auto& cleanups = it->cleanupVars;
+                auto found = std::find(cleanups.begin(), cleanups.end(), Alloca);
+                if (found != cleanups.end()) {
+                    cleanups.erase(found);
+                    break; // Found and removed
+                }
+            }
+        }
+    }
+    
+    // Val is likely a pointer (or a Slice struct if it was a variable load)
+    // Wait, VariableExprAST::codegen() loads the value.
+    // If it's a slice (struct), we need the pointer inside.
+    
+    llvm::Value* PtrToDelete = Val;
+    if (Val->getType()->isStructTy()) {
+        // Assume Slice { size, ptr }
+        if (Val->getType()->getStructNumElements() == 2) {
+             PtrToDelete = Builder->CreateExtractValue(Val, 1, "delete_ptr");
+        }
+    }
+    
+    if (!PtrToDelete->getType()->isPointerTy()) {
+        LogError("Cannot delete non-pointer type");
+        return nullptr;
+    }
+    
+    // Cast to opaque ptr if needed (LLVM 18 uses ptr)
+    if (PtrToDelete->getType() != llvm::PointerType::get(*TheContext, 0)) {
+        PtrToDelete = Builder->CreateBitCast(PtrToDelete, llvm::PointerType::get(*TheContext, 0), "delete_cast");
+    }
+    
+    Builder->CreateCall(getFreeFunc(), {PtrToDelete});
+    
+    return llvm::Constant::getNullValue(llvm::Type::getInt32Ty(*TheContext));
 }
 
 llvm::Value *BinaryExprAST::codegen() {

@@ -674,6 +674,24 @@ std::unique_ptr<ExprAST> Parser::ParseStatement() {
         return ParseVarDecl();
     }
     
+    // Manual Memory Management: delete expr;
+    if (curTok.type == TokenType::Delete) {
+        if (unsafeDepth == 0) {
+            LogSafetyError("'delete' is only allowed inside unsafe blocks");
+        }
+        getNextToken(); // eat 'delete'
+        
+        auto Expr = ParseExpression();
+        if (!Expr) return nullptr;
+        
+        if (curTok.type != TokenType::Semicolon) {
+            return LogError("Expected ';' after delete statement");
+        }
+        getNextToken(); // eat ';'
+        
+        return std::make_unique<DeleteExprAST>(std::move(Expr));
+    }
+    
     // Block statement
     if (curTok.type == TokenType::LBrace) {
         return ParseBlock();

@@ -6,27 +6,26 @@ enum class TokenType {
     // End of File
     EoF,
 
-    // Keywords
-    Fn, Var, Mut, Return, If, Else, While, For, Class, Struct, Module, Import,
-    Open, Virtual, Override, New, Shared, Unsafe, Match,
-
-    // Types
-    TypeInt, TypeFloat, TypeBool, TypeVoid, TypeChar, TypeByte,
-
     // Identifiers & Literals
-    Identifier, Integer, Float, StringLit, CharLit, True, False,
+    Identifier, Integer, Float, CharLit, StringLit,
 
-    // Operators & Punctuation
-    Plus, Minus, Star, Slash, Equal,           // + - * / =
-    EqualEqual, NotEqual, Less, Greater,       // == != < >
-    LessEqual, GreaterEqual,                   // <= >=
-    LogicalAnd, LogicalOr,                     // && ||
-    Ampersand,                                 // &
-    Arrow,                                     // ->
-    LParen, RParen, LBrace, RBrace,            // ( ) { }
-    LBracket, RBracket,                        // [ ]
-    LAngle, RAngle,                            // < > (for generics)
-    Semicolon, Colon, Comma, Dot               // ; : , .
+    // Keywords
+    Fn, Var, Mut, Return, If, Else, While, For, Struct, Class, Import, Module,
+    Open, Virtual, Override, New, Shared, Unsafe, Match, Delete,
+    
+    // Primitive Types
+    TypeInt, TypeFloat, TypeBool, TypeVoid, TypeChar, TypeByte,
+    
+    // Boolean Literals
+    True, False,
+    
+    // Operators
+    Plus, Minus, Star, Slash, Mod, Equal, NotEqual, Less, Greater, LessEqual, GreaterEqual,
+    Assign, Ampersand, Arrow, Dot, Comma, Semicolon, Colon, EqualEqual,
+    LogicalAnd, LogicalOr,
+    
+    // Delimiters
+    LParen, RParen, LBrace, RBrace, LBracket, RBracket
 };
 
 struct Token {

@@ -483,6 +483,16 @@ public:
     llvm::Value *codegen() override;
 };
 
+// 9. Delete Node
+class DeleteExprAST : public ExprAST {
+    std::unique_ptr<ExprAST> Operand;
+public:
+    DeleteExprAST(std::unique_ptr<ExprAST> Operand)
+        : Operand(std::move(Operand)) {}
+    llvm::Value *codegen() override;
+    OType getOType() const override { return OType(BaseType::Void); }
+};
+
 // 8. Updated Prototype to store types
 class PrototypeAST {
     std::string Name;
