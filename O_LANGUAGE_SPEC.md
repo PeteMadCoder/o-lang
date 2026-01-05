@@ -78,7 +78,7 @@ fn add(int a, int b) -> int {
     *   Implements a **ScopeStack** for symbol resolution.
     *   Implements **Type Tracking** (`NamedTypes`, `getOType`) for strict GEP generation.
 
-### 3.2 Completed Features (Milestones 1, 2, 3, & 4)
+### 3.2 Completed Features (Milestones 1, 2, 3, 4, & 6)
 1.  **Basic Compilation:**
     *   Compiles functions, arithmetic, assignments, and returns.
     *   Links with standard C library (relies on `malloc`/`free`).
@@ -109,19 +109,42 @@ fn add(int a, int b) -> int {
     *   **Generic Structs:** `struct Box<T> { ... }` supported.
     *   **Instantiation:** `new Box<int>()` instantiates `Box_int` with full deep copying and type substitution.
     *   **Method Resolution:** Generic methods are instantiated and resolved correctly.
+9.  **Module System (Imports):**
+    *   `import` keyword implemented (AST Injection).
+    *   Recursive dependency resolution with cycle detection.
+    *   Path resolution via `-I` flags.
 
 ### 3.3 Known Limitations & Missing Features (Tech Debt)
 1.  **Strings:**
     *   *Status:* String literals create global `i8*` constants.
     *   *Missing:* No `String` struct/class in stdlib. No string concatenation or manipulation operators.
-2.  **Imports:**
-    *   `import` keyword is parsed but does nothing. No multi-file compilation/linking logic in the compiler driver.
-3.  **Standard Library:**
+2.  **Standard Library:**
     *   No built-in print (except relying on external linking), math, or IO libraries. Strings fall into this category, since they should be implemented in the standart library.
 
 ---
 
-## 4. Example Code (Supported)
+## 4. Compiler Usage
+
+The compiler (`oc`) supports a standard CLI interface:
+
+```bash
+# Basic Compilation
+oc main.o
+
+# Specify Output Filename
+oc main.o -o myapp
+
+# Compile Only (no linking)
+oc main.o -c -o main.obj
+
+# Add Include Paths
+oc main.o -I ./stdlib -I ./includes
+
+# Link External Libraries
+oc main.o -l SDL2 -l pthread
+```
+
+## 5. Example Code (Supported)
 ```o
 struct Box<T> {
     T val;

@@ -3,8 +3,6 @@
 #include <sstream>
 #include <vector>
 #include <optional>
-#include "Lexer.h"
-#include "AST.h"
 
 // LLVM Includes
 #include "llvm/TargetParser/Host.h"
@@ -14,49 +12,48 @@
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/IR/LegacyPassManager.h"
+#include "llvm/Support/CommandLine.h"
 
 // Forward declarations from CodeGen.cpp
 void InitializeModuleAndPassManager();
 extern std::unique_ptr<llvm::Module> TheModule;
 
-// Include the Parser logic
-#include "Parser.h" 
+#include "CompilerDriver.h"
+
+namespace cl = llvm::cl;
+
+// Command Line Options
+cl::opt<std::string> InputFilename(cl::Positional, cl::desc("<input file>"), cl::Required);
+cl::opt<std::string> OutputFilename("o", cl::desc("Specify output filename"), cl::value_desc("filename"));
+cl::list<std::string> IncludePaths("I", cl::desc("Add directory to include search path"), cl::value_desc("directory"), cl::Prefix);
+cl::list<std::string> LinkLibs("l", cl::desc("Link external library"), cl::value_desc("library"), cl::Prefix);
+cl::opt<bool> CompileOnly("c", cl::desc("Compile only (do not link)"), cl::init(false));
 
 int main(int argc, char** argv) {
+    // 0. Parse Arguments
+    cl::ParseCommandLineOptions(argc, argv, "O Compiler\n");
+
     // 1. Initialize LLVM
     InitializeModuleAndPassManager();
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
     llvm::InitializeNativeTargetAsmParser();
 
-    // 2. Read Source Code
-    std::string filename = "../tests/source.o"; 
-    if (argc > 1) filename = argv[1];
-
-    std::ifstream file(filename);
-    if (!file.is_open()) {
-        file.open(filename); 
-         if (!file.is_open()) {
-             std::cerr << "Could not open file: " << filename << "\n";
-             return 1;
-         }
+    // 2. Configure Driver
+    CompilerDriver driver;
+    // Add default include paths (optional, but good for UX)
+    driver.addIncludePath("."); 
+    driver.addIncludePath("tests");
+    driver.addIncludePath("o-compiler/tests");
+    
+    for (const auto& path : IncludePaths) {
+        driver.addIncludePath(path);
     }
-    std::stringstream buffer;
-    buffer << file.rdbuf();
-    std::string source_code = buffer.str();
 
-    std::cout << "Compiling: " << filename << "\n";
+    std::cout << "Compiling: " << InputFilename << "\n";
 
-    // 3. Parse & Codegen Loop
-    Lexer lexer(source_code);
-    Parser parser(lexer);
-
-    while (!parser.isEOF()) {
-        if (!parser.ParseTopLevel()) {
-            std::cerr << "Parsing failed.\n";
-            return 1;
-        }
-    }
+    // 3. Process File
+    driver.processFile(InputFilename);
 
     // 5. Target Setup
     auto TargetTriple = llvm::sys::getDefaultTargetTriple();
@@ -78,10 +75,16 @@ int main(int argc, char** argv) {
     
     TheModule->setDataLayout(TheTargetMachine->createDataLayout());
     
+    // Determine Output Filenames
+    std::string FinalOutput = OutputFilename.empty() ? "output" : OutputFilename.getValue();
+    std::string ObjFilename = FinalOutput + ".obj";
+    if (CompileOnly && !OutputFilename.empty()) {
+        ObjFilename = FinalOutput; // If -c -o foo.o, use foo.o
+    }
+    
     // 6. Emit Object File
-    std::string objFilename = "output.obj";
     std::error_code EC;
-    llvm::raw_fd_ostream dest(objFilename, EC, llvm::sys::fs::OF_None);
+    llvm::raw_fd_ostream dest(ObjFilename, EC, llvm::sys::fs::OF_None);
     
     if (EC) {
         std::cerr << "Could not open output file: " << EC.message() << "\n";
@@ -98,11 +101,21 @@ int main(int argc, char** argv) {
     
     pass.run(*TheModule);
     dest.flush();
+    dest.close(); // Close before linking
     
-    std::cout << "Object file written to " << objFilename << "\n";
+    std::cout << "Object file written to " << ObjFilename << "\n";
     
+    if (CompileOnly) {
+        return 0;
+    }
+
     // 7. Link to Executable
-    std::string cmd = "clang -no-pie " + objFilename + " -o output -lm";
+    std::string cmd = "clang -no-pie " + ObjFilename + " -o " + FinalOutput + " -lm";
+    
+    // Add libraries
+    for (const auto& lib : LinkLibs) {
+        cmd += " -l" + lib;
+    }
     
     std::cout << "Linking: " << cmd << "\n";
     int ret = system(cmd.c_str());
@@ -111,7 +124,12 @@ int main(int argc, char** argv) {
         return 1;
     }
     
-    std::cout << "Compilation successful! Run with ./output\n";
+    // Clean up temporary object file if we didn't ask for it specifically? 
+    // Usually compilers keep .o files only if requested. But for now keep it.
+    // To match gcc/clang behavior: if linking, delete temp .o unless -save-temps.
+    // But let's keep it simple.
+
+    std::cout << "Build successful! -> " << FinalOutput << "\n";
 
     return 0;
 }

@@ -17,6 +17,7 @@ set(SOURCES
     src/Lexer.cpp
     src/CodeGen.cpp
     src/Parser.cpp
+    src/CompilerDriver.cpp
 )
 
 add_executable(oc ${SOURCES})

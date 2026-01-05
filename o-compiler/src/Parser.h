@@ -5,13 +5,16 @@
 #include <memory>
 #include <vector>
 
+class CompilerDriver;
+
 class Parser {
     Lexer& lexer;
+    CompilerDriver& driver;
     Token curTok;
     int unsafeDepth = 0; // Track unsafe block nesting depth
 
 public:
-    Parser(Lexer& lex);
+    Parser(Lexer& lex, CompilerDriver& drv);
 
     // Advance to the next token
     void getNextToken();
@@ -135,6 +138,9 @@ public:
     // Parse top-level declaration (function, struct, or class)
     bool ParseTopLevel();
     
+    // Parse import: import "filename";
+    bool ParseImport();
+
     // Parse identifier list: name1, name2, name3
     std::vector<std::string> ParseIdentifierList();
     

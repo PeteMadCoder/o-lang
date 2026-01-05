@@ -1,4 +1,5 @@
 #include "Parser.h"
+#include "CompilerDriver.h"
 #include <iostream>
 #include <cassert>
 
@@ -12,7 +13,7 @@ static std::map<char, int> BinopPrecedence = {
     {'/', 40}
 };
 
-Parser::Parser(Lexer& lex) : lexer(lex) {
+Parser::Parser(Lexer& lex, CompilerDriver& drv) : lexer(lex), driver(drv) {
     getNextToken(); // Prime the pump
     
     // Verify initial safety state
@@ -1032,7 +1033,9 @@ std::unique_ptr<ClassDeclAST> Parser::ParseClass() {
 }
 
 bool Parser::ParseTopLevel() {
-    if (curTok.type == TokenType::Struct) {
+    if (curTok.type == TokenType::Import) {
+        return ParseImport();
+    } else if (curTok.type == TokenType::Struct) {
         auto structAST = ParseStruct();
         if (structAST) {
             structAST->codegen();
@@ -1154,6 +1157,28 @@ std::vector<std::string> Parser::ParseGenericParams() {
     getNextToken(); // eat '>'
     
     return genericParams;
+}
+
+bool Parser::ParseImport() {
+    if (curTok.type != TokenType::Import) return false;
+    getNextToken(); // eat 'import'
+    
+    if (curTok.type != TokenType::StringLit) {
+        LogError("Expected string literal after 'import'");
+        return false;
+    }
+    
+    std::string filename = curTok.text.substr(1, curTok.text.length() - 2); // Remove quotes
+    getNextToken(); // eat string
+    
+    if (curTok.type != TokenType::Semicolon) {
+        LogError("Expected ';' after import");
+        return false;
+    }
+    getNextToken(); // eat ';'
+    
+    driver.processFile(filename);
+    return true;
 }
 
 std::unique_ptr<ExprAST> Parser::ParseUnsafeBlock() {
