@@ -564,6 +564,149 @@ llvm::Value *CallExprAST::codegen() {
     return Builder->CreateCall(CalleeF, ArgsV, "calltmp");
 }
 
+llvm::Value *MethodCallExprAST::codegen() {
+    // 1. Resolve Object
+    OType ObjType = Object->getOType();
+    std::string StructName = ObjType.structName;
+    
+    if (StructName.empty()) {
+        LogError("Method call on non-struct type");
+        return nullptr;
+    }
+
+    std::string MangledName = StructName + "_" + MethodName;
+    llvm::Function *CalleeF = TheModule->getFunction(MangledName);
+    if (!CalleeF) {
+        std::string err = "Unknown method: " + MangledName; 
+        LogError(err.c_str());
+        return nullptr;
+    }
+
+    // 2. Prepare 'this' pointer
+    llvm::Value *ThisPtr = nullptr;
+    if (ObjType.isPointer()) {
+        ThisPtr = Object->codegen();
+    } else {
+        ThisPtr = Object->codegenAddress();
+        if (!ThisPtr) {
+            // R-value struct (returned from function, etc). Store to temp.
+            llvm::Value *Val = Object->codegen();
+            if (!Val) return nullptr;
+             llvm::Function *TheFunction = Builder->GetInsertBlock()->getParent();
+             llvm::AllocaInst *TempAlloca = CreateEntryBlockAlloca(TheFunction, "tmp_this", Val->getType());
+             Builder->CreateStore(Val, TempAlloca);
+             ThisPtr = TempAlloca;
+        }
+    }
+    
+    if (!ThisPtr) return nullptr;
+
+    // 3. Prepare Arguments
+    std::vector<llvm::Value *> ArgsV;
+    ArgsV.push_back(ThisPtr); // Inject 'this'
+    
+    if (CalleeF->arg_size() != Args.size() + 1) {
+        LogError("Incorrect # arguments passed to method");
+        return nullptr;
+    }
+
+    for (unsigned i = 0, e = Args.size(); i != e; ++i) {
+        llvm::Value *ArgVal = Args[i]->codegen();
+        if (!ArgVal) return nullptr;
+        
+        // Implicit Cast: Fixed Array -> Slice
+        // Param Type (shifted by 1 for 'this')
+        llvm::Type *ParamType = CalleeF->getArg(i + 1)->getType();
+        llvm::Type *ArgType = ArgVal->getType();
+        
+        // Check if Param is Slice ({i32, T*})
+        bool IsParamSlice = false;
+        if (ParamType->isStructTy() && !ParamType->getStructName().starts_with("class.") && !ParamType->getStructName().starts_with("struct.")) {
+            if (ParamType->getStructNumElements() == 2 && 
+                ParamType->getStructElementType(0)->isIntegerTy(32) &&
+                ParamType->getStructElementType(1)->isPointerTy()) {
+                IsParamSlice = true;
+            }
+        }
+        
+        if (IsParamSlice && ArgType->isArrayTy()) {
+             llvm::Function *TheFunction = Builder->GetInsertBlock()->getParent();
+             llvm::AllocaInst *TempAlloca = CreateEntryBlockAlloca(TheFunction, "tmparray", ArgType);
+             Builder->CreateStore(ArgVal, TempAlloca);
+             
+             uint64_t ArraySize = ArgType->getArrayNumElements();
+             
+             llvm::Value *Zero = llvm::ConstantInt::get(llvm::Type::getInt32Ty(*TheContext), 0);
+             std::vector<llvm::Value*> Indices = {Zero, Zero};
+             
+             llvm::Value *DecayedPtr = Builder->CreateInBoundsGEP(
+                 ArgType,
+                 TempAlloca,
+                 Indices,
+                 "decayed_ptr"
+             );
+             
+             llvm::Value *Slice = llvm::UndefValue::get(ParamType);
+             
+             llvm::Value *SizeVal = llvm::ConstantInt::get(llvm::Type::getInt32Ty(*TheContext), ArraySize);
+             Slice = Builder->CreateInsertValue(Slice, SizeVal, 0, "cast_slice_len");
+             
+             llvm::Value *TypedPtr = Builder->CreateBitCast(DecayedPtr, ParamType->getStructElementType(1), "cast_slice_ptr");
+             Slice = Builder->CreateInsertValue(Slice, TypedPtr, 1, "cast_slice_ptr");
+             
+             ArgVal = Slice;
+        }
+        
+        ArgsV.push_back(ArgVal);
+    }
+
+    // 4. Dynamic Dispatch Check
+    int virtualIndex = -1;
+    if (TypeRegistry::getInstance().hasStruct(StructName)) {
+        const StructInfo& info = TypeRegistry::getInstance().getStruct(StructName);
+        for (size_t i = 0; i < info.virtualMethods.size(); ++i) {
+            if (info.virtualMethods[i] == MethodName) {
+                virtualIndex = i;
+                break;
+            }
+        }
+    }
+    
+    if (virtualIndex != -1) {
+        // Dynamic Dispatch
+        llvm::Value* Zero = llvm::ConstantInt::get(llvm::Type::getInt32Ty(*TheContext), 0);
+        
+        // __vptr is at index 0
+        llvm::Value* vptrAddr = Builder->CreateInBoundsGEP(
+             StructTypes[StructName],
+             ThisPtr,
+             {Zero, Zero},
+             "vptr_addr"
+        );
+        
+        llvm::Type* i8PtrType = llvm::PointerType::get(llvm::Type::getInt8Ty(*TheContext), 0); // i8*
+        llvm::Type* vtableType = llvm::PointerType::get(i8PtrType, 0); // i8**
+        
+        llvm::Value* vtable = Builder->CreateLoad(vtableType, vptrAddr, "vtable");
+        
+        llvm::Value* funcPtrAddr = Builder->CreateInBoundsGEP(
+            i8PtrType,
+            vtable,
+            llvm::ConstantInt::get(llvm::Type::getInt32Ty(*TheContext), virtualIndex),
+            "func_ptr_addr"
+        );
+        
+        llvm::Value* funcVoidPtr = Builder->CreateLoad(i8PtrType, funcPtrAddr, "func_void_ptr");
+        
+        llvm::FunctionType* funcType = CalleeF->getFunctionType();
+        llvm::Value* funcPtr = Builder->CreateBitCast(funcVoidPtr, llvm::PointerType::get(funcType, 0), "func_ptr");
+        
+        return Builder->CreateCall(funcType, funcPtr, ArgsV, "vcalltmp");
+    }
+
+    return Builder->CreateCall(CalleeF, ArgsV, "calltmp");
+}
+
 llvm::Value *BlockExprAST::codegen() {
     EnterScope();
     llvm::Value *LastVal = nullptr;
@@ -885,21 +1028,27 @@ llvm::Function *ConstructorAST::codegen(const std::string& structName) {
     // Create constructor function name: StructName_new
     std::string funcName = structName + "_new";
     
-    // Convert parameters to LLVM types
+    // Params: this, args...
     std::vector<llvm::Type*> paramTypes;
     std::vector<std::string> paramNames;
     
+    // 1. Add 'this' parameter
+    if (StructTypes.find(structName) == StructTypes.end()) {
+        LogError("Unknown struct type for constructor");
+        return nullptr;
+    }
+    llvm::Type* structType = StructTypes[structName];
+    paramTypes.push_back(llvm::PointerType::get(structType, 0));
+    paramNames.push_back("this");
+    
+    // 2. Add user parameters
     for (const auto& param : Params) {
         paramTypes.push_back(getLLVMType(param.second));
         paramNames.push_back(param.first);
     }
     
-    // Constructor returns a pointer to the struct
-    llvm::Type* structType = StructTypes[structName];
-    llvm::Type* returnType = llvm::PointerType::get(structType, 0);
-    
-    // Create function type
-    llvm::FunctionType* funcType = llvm::FunctionType::get(returnType, paramTypes, false);
+    // Constructor returns void (it initializes the memory passed in 'this')
+    llvm::FunctionType* funcType = llvm::FunctionType::get(llvm::Type::getVoidTy(*TheContext), paramTypes, false);
     
     // Create function
     llvm::Function* func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, funcName, TheModule.get());
@@ -908,22 +1057,80 @@ llvm::Function *ConstructorAST::codegen(const std::string& structName) {
     llvm::BasicBlock* BB = llvm::BasicBlock::Create(*TheContext, "entry", func);
     Builder->SetInsertPoint(BB);
     
-    // Set parameter names and create allocas
     EnterScope();
     
+    // Handle Arguments
     auto argIt = func->arg_begin();
     for (size_t i = 0; i < paramNames.size(); ++i, ++argIt) {
         argIt->setName(paramNames[i]);
-        llvm::AllocaInst* alloca = CreateEntryBlockAlloca(func, paramNames[i], paramTypes[i]);
-        Builder->CreateStore(&*argIt, alloca);
-        AddVariable(paramNames[i], alloca);
+        
+        if (paramNames[i] == "this") {
+            // Store 'this' pointer in an alloca so we can access it via load/store
+            llvm::AllocaInst* alloca = CreateEntryBlockAlloca(func, "this", argIt->getType());
+            Builder->CreateStore(&*argIt, alloca);
+            
+            AddVariable("this", alloca);
+            AddVariableType("this", OType(BaseType::Struct, 1, structName));
+        } else {
+            // User arguments
+            llvm::AllocaInst* alloca = CreateEntryBlockAlloca(func, paramNames[i], argIt->getType());
+            Builder->CreateStore(&*argIt, alloca);
+            
+            AddVariable(paramNames[i], alloca);
+            // We should register the type here if we had it easily available matching the param index
+            // But for now, we rely on the parser having checked types? 
+            // Or we iterate Params again.
+        }
     }
     
-    // Generate constructor body
     Body->codegen();
     
-    // For now, return null pointer (proper struct allocation would go here)
-    Builder->CreateRet(llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(returnType)));
+    // Initialize VTable Pointer if it exists
+    if (TypeRegistry::getInstance().hasStruct(structName)) {
+        const StructInfo& info = TypeRegistry::getInstance().getStruct(structName);
+        
+        bool hasVptr = !info.fields.empty() && info.fields[0].name == "__vptr";
+        
+        if (hasVptr) {
+            // Load 'this' pointer
+            llvm::AllocaInst* thisAlloca = GetVariable("this");
+            if (thisAlloca) {
+                llvm::Value* thisPtr = Builder->CreateLoad(thisAlloca->getAllocatedType(), thisAlloca, "thisptr");
+                
+                // Get Global VTable
+                std::string vtableName = structName + "_vtable";
+                llvm::GlobalVariable* vtableVar = TheModule->getNamedGlobal(vtableName);
+                
+                if (vtableVar) {
+                    // Get address of __vptr field (index 0)
+                    std::vector<llvm::Value*> indices;
+                    indices.push_back(llvm::ConstantInt::get(llvm::Type::getInt32Ty(*TheContext), 0));
+                    indices.push_back(llvm::ConstantInt::get(llvm::Type::getInt32Ty(*TheContext), 0)); // Field 0
+                    
+                    llvm::Value* vptrAddr = Builder->CreateInBoundsGEP(
+                        StructTypes[structName],
+                        thisPtr,
+                        indices,
+                        "vptr_addr"
+                    );
+                    
+                    // Store VTable address
+                    // VTable var is [N x i8*]*. Decay to i8**.
+                     llvm::Value* Zero = llvm::ConstantInt::get(llvm::Type::getInt32Ty(*TheContext), 0);
+                     llvm::Value* vtablePtr = Builder->CreateInBoundsGEP(
+                         vtableVar->getValueType(),
+                         vtableVar,
+                         {Zero, Zero},
+                         "vtable_decay"
+                     );
+                     
+                     Builder->CreateStore(vtablePtr, vptrAddr);
+                }
+            }
+        }
+    }
+    
+    Builder->CreateRetVoid();
     
     ExitScope();
     
@@ -994,18 +1201,37 @@ llvm::Value *NewExprAST::codegen() {
     
     llvm::StructType *StructType = StructTypes[ClassName];
     
-    // Allocate memory on stack for now (heap allocation would come later)
-    llvm::Function *TheFunction = Builder->GetInsertBlock()->getParent();
-    llvm::AllocaInst *Alloca = CreateEntryBlockAlloca(TheFunction, "obj", StructType);
+    // 1. Heap Allocation (malloc)
+    llvm::Function *MallocF = TheModule->getFunction("malloc");
+    if (!MallocF) {
+        std::vector<llvm::Type*> Args;
+        Args.push_back(llvm::Type::getInt64Ty(*TheContext)); // size_t
+        llvm::FunctionType *FT = llvm::FunctionType::get(
+            llvm::PointerType::get(llvm::Type::getInt8Ty(*TheContext), 0), Args, false);
+        MallocF = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "malloc", TheModule.get());
+    }
     
-    // Try to call constructor: ClassName_new
+    // Calculate size
+    size_t size = 0;
+    if (TypeRegistry::getInstance().hasStruct(ClassName)) {
+        size = TypeRegistry::getInstance().getStruct(ClassName).totalSize;
+    }
+    if (size == 0) size = 1; // Minimum allocation
+    
+    llvm::Value *SizeVal = llvm::ConstantInt::get(llvm::Type::getInt64Ty(*TheContext), size);
+    llvm::Value *VoidPtr = Builder->CreateCall(MallocF, {SizeVal}, "mallocptr");
+    
+    // Cast to Struct*
+    llvm::Value *ObjPtr = Builder->CreateBitCast(VoidPtr, llvm::PointerType::get(StructType, 0), "objptr");
+
+    // 2. Call Constructor: ClassName_new(this, args...)
     std::string ConstructorName = ClassName + "_new";
     llvm::Function *Constructor = TheModule->getFunction(ConstructorName);
     
     if (Constructor) {
         // Prepare arguments: this pointer + user arguments
         std::vector<llvm::Value*> CallArgs;
-        CallArgs.push_back(Alloca); // 'this' pointer
+        CallArgs.push_back(ObjPtr); // 'this' pointer
         
         // Add user arguments
         for (auto &Arg : Args) {
@@ -1014,12 +1240,17 @@ llvm::Value *NewExprAST::codegen() {
             CallArgs.push_back(ArgVal);
         }
         
+        // Check argument count
+        if (Constructor->arg_size() != CallArgs.size()) {
+             // Try to handle implicit conversions if needed, or just error
+             // For now assume perfect match
+        }
+
         // Call constructor
         Builder->CreateCall(Constructor, CallArgs);
     }
-    // If no constructor exists, just return the allocated memory
     
-    return Alloca; // Return pointer to the allocated object
+    return ObjPtr; // Return pointer to the allocated object
 }
 
 // Helper to get slice type: { i32 size, T* ptr }
@@ -1380,8 +1611,21 @@ void ClassDeclAST::codegen() {
     
     size_t offset = 0;
     
+    // Check inheritance logic
+    if (hasParent()) {
+         if (TypeRegistry::getInstance().hasStruct(ParentName)) {
+             const StructInfo& parentInfo = TypeRegistry::getInstance().getStruct(ParentName);
+             // Inherit Virtual Methods from Parent
+             std::vector<std::string> parentVMethods = parentInfo.virtualMethods;
+             if (!parentVMethods.empty()) {
+                 VirtualMethods.insert(VirtualMethods.begin(), parentVMethods.begin(), parentVMethods.end());
+             }
+         }
+    }
+
     // Add hidden vptr field at index 0 if class has virtual methods or inherits from class with virtual methods
     bool needsVTable = !VirtualMethods.empty() || (hasParent() && isOpen());
+    
     if (needsVTable) {
         // vptr is a pointer to array of function pointers (i8**)
         llvm::Type* i8PtrType = llvm::PointerType::get(llvm::Type::getInt8Ty(*TheContext), 0);
@@ -1406,7 +1650,7 @@ void ClassDeclAST::codegen() {
         
         if (TypeRegistry::getInstance().hasStruct(ParentName)) {
             const StructInfo& parentInfo = TypeRegistry::getInstance().getStruct(ParentName);
-            
+
             // Copy parent fields (skip vptr if already added)
             for (const auto& parentField : parentInfo.fields) {
                 if (needsVTable && parentField.name == "__vptr") continue; // Skip parent vptr
@@ -1446,7 +1690,7 @@ void ClassDeclAST::codegen() {
     StructTypes[Name] = structType;
     
     // Register in type registry
-    TypeRegistry::getInstance().registerStruct(Name, fieldInfos);
+    TypeRegistry::getInstance().registerStruct(Name, fieldInfos, VirtualMethods);
     
     // Generate code for methods with name mangling FIRST
     for (auto& method : Methods) {
@@ -1457,14 +1701,14 @@ void ClassDeclAST::codegen() {
         method->codegen();
     }
     
+    // Generate VTable AFTER methods are compiled but BEFORE constructors
+    if (needsVTable) {
+        generateVTable();
+    }
+
     // Generate code for constructors
     for (auto& constructor : Constructors) {
         constructor->codegen(Name);
-    }
-    
-    // Generate VTable AFTER methods are compiled
-    if (needsVTable) {
-        generateVTable();
     }
 }
 
@@ -1602,6 +1846,15 @@ OType BinaryExprAST::getOType() const {
 
 OType CallExprAST::getOType() const {
     if (FunctionReturnTypes.count(Callee)) return FunctionReturnTypes.at(Callee);
+    return OType(BaseType::Void);
+}
+
+OType MethodCallExprAST::getOType() const {
+    OType ObjType = Object->getOType();
+    std::string StructName = ObjType.structName;
+    
+    std::string MangledName = StructName + "_" + MethodName;
+    if (FunctionReturnTypes.count(MangledName)) return FunctionReturnTypes.at(MangledName);
     return OType(BaseType::Void);
 }
 

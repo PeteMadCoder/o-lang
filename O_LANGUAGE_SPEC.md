@@ -1,6 +1,6 @@
 # The O Language Specification & Status Report
 **Date:** January 2026
-**Version:** 0.2 (Alpha)
+**Version:** 0.3 (Alpha)
 
 ## 1. Introduction
 "O" is a statically-typed, compiled systems programming language designed to bridge the gap between low-level control (C-style pointers, manual memory management) and high-level safety (RAII, automatic cleanup, strong typing). It targets LLVM IR.
@@ -78,7 +78,7 @@ fn add(int a, int b) -> int {
     *   Implements a **ScopeStack** for symbol resolution.
     *   Implements **Type Tracking** (`NamedTypes`, `getOType`) for strict GEP generation.
 
-### 3.2 Completed Features (Milestones 1 & 2)
+### 3.2 Completed Features (Milestones 1, 2, & 3)
 1.  **Basic Compilation:**
     *   Compiles functions, arithmetic, assignments, and returns.
     *   Links with standard C library (relies on `malloc`/`free`).
@@ -100,45 +100,42 @@ fn add(int a, int b) -> int {
     *   `unsafe { ... }` blocks enforced.
     *   `delete ptr;` statement implemented (removes var from RAII stack).
     *   Pointer dereferencing (`*ptr`) restricted to unsafe blocks.
+7.  **Object-Oriented Programming:**
+    *   **Method Calls:** `obj.method(args)` syntax supported with static dispatch.
+    *   **Constructors:** `new Class()` allocates memory (Heap) and calls the constructor `new()`.
+    *   **Inheritance:** `class Child : Parent` inherits fields and methods.
+    *   **Dynamic Dispatch:** `virtual` and `override` methods use VTables for runtime polymorphism.
 
 ### 3.3 Known Limitations & Missing Features (Tech Debt)
-1.  **Classes & Inheritance:**
-    *   *Status:* Parser supports `class`, `virtual`, `override`. AST exists. CodeGen has VTable logic (`ClassDeclAST::codegen`).
-    *   *Missing:* Runtime testing of dynamic dispatch. `CallExprAST` does not yet support method syntax `obj.method()`, only global functions `func()`.
-2.  **Generics:**
+1.  **Generics:**
     *   *Status:* Parser supports `<T>`. `StructDeclAST` stores generic params.
     *   *Missing:* Code generation for generics is explicitly skipped. No instantiation logic (monomorphization) exists.
-3.  **Strings:**
+2.  **Strings:**
     *   *Status:* String literals create global `i8*` constants.
     *   *Missing:* No `String` struct/class in stdlib. No string concatenation or manipulation operators.
-4.  **Method Calls:**
-    *   Currently, functions declared inside structs/classes are mangled (`Struct_method`), but the call syntax `obj.method()` is not wired up in `CallExprAST` or `MemberAccessAST`. Code must currently use function-style calls if even possible, or implementation is pending.
-5.  **Imports:**
+3.  **Imports:**
     *   `import` keyword is parsed but does nothing. No multi-file compilation/linking logic in the compiler driver.
-6.  **Standard Library:**
+4.  **Standard Library:**
     *   No built-in print (except relying on external linking), math, or IO libraries. Strings fall into this category, since they should be implemented in the standart library.
 
 ---
 
 ## 4. Example Code (Supported)
 ```o
-struct Vector {
-    int x;
-    int y;
+open class Animal {
+    new() {}
+    virtual fn speak() -> int { return 1; }
+}
+
+class Dog : Animal {
+    new() {}
+    override fn speak() -> int { return 2; }
 }
 
 fn main() -> int {
-    // RAII: 'vecs' is freed automatically at end of scope
-    var vecs = new Vector[10];
+    var d = new Dog();
     
-    vecs[0].x = 100;
-    
-    unsafe {
-        // Manual memory management
-        var raw = new int[5];
-        delete raw; // OK, removed from auto-cleanup
-    }
-    
-    return vecs[0].x;
+    // Virtual Method Call (Dynamic Dispatch)
+    return d.speak(); // Returns 2
 }
 ```

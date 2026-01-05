@@ -9,7 +9,7 @@ static std::unordered_map<std::string, TokenType> keywords = {
     {"while", TokenType::While}, {"for", TokenType::For}, {"class", TokenType::Class}, {"struct", TokenType::Struct},
     {"module", TokenType::Module}, {"import", TokenType::Import}, {"new", TokenType::New},
     {"unsafe", TokenType::Unsafe}, {"open", TokenType::Open}, {"virtual", TokenType::Virtual},
-    {"match", TokenType::Match}, {"delete", TokenType::Delete},
+    {"match", TokenType::Match}, {"delete", TokenType::Delete}, {"override", TokenType::Override},
     {"int", TokenType::TypeInt}, {"float", TokenType::TypeFloat},
     {"bool", TokenType::TypeBool}, {"void", TokenType::TypeVoid},
     {"char", TokenType::TypeChar}, {"byte", TokenType::TypeByte},

@@ -447,10 +447,34 @@ std::unique_ptr<ExprAST> Parser::ParsePostfix() {
                 return LogError("Expected field name after '.'");
             }
             
-            std::string FieldName = curTok.text;
-            getNextToken(); // eat field name
+            std::string MemberName = curTok.text;
+            getNextToken(); // eat member name
             
-            Expr = std::make_unique<MemberAccessAST>(std::move(Expr), FieldName);
+            // Check for Method Call: obj.method(...)
+            if (curTok.type == TokenType::LParen) {
+                getNextToken(); // eat '('
+                std::vector<std::unique_ptr<ExprAST>> Args;
+                if (curTok.type != TokenType::RParen) {
+                    while (true) {
+                        if (auto Arg = ParseExpression())
+                            Args.push_back(std::move(Arg));
+                        else
+                            return nullptr;
+
+                        if (curTok.type == TokenType::RParen) break;
+
+                        if (curTok.type != TokenType::Comma)
+                            return LogError("Expected ')' or ',' in argument list");
+                        getNextToken();
+                    }
+                }
+                getNextToken(); // eat ')'
+                
+                Expr = std::make_unique<MethodCallExprAST>(std::move(Expr), MemberName, std::move(Args));
+            } else {
+                // Field Access: obj.field
+                Expr = std::make_unique<MemberAccessAST>(std::move(Expr), MemberName);
+            }
         } else if (curTok.type == TokenType::LBracket) {
             getNextToken(); // eat '['
             
@@ -921,6 +945,21 @@ std::unique_ptr<ClassDeclAST> Parser::ParseClass() {
             
             // Track virtual method name
             VirtualMethods.push_back(method->getPrototype()->getName());
+            Methods.push_back(std::move(method));
+            
+        } else if (curTok.type == TokenType::Override) {
+            getNextToken(); // eat 'override'
+            
+            if (curTok.type != TokenType::Fn) {
+                LogError("Expected 'fn' after 'override'");
+                return nullptr;
+            }
+            
+            auto method = ParseDefinition();
+            if (!method) {
+                LogError("Failed to parse override method");
+                return nullptr;
+            }
             Methods.push_back(std::move(method));
             
         } else if (curTok.type == TokenType::Fn) {

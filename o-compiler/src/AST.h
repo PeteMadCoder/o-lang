@@ -78,6 +78,7 @@ struct StructInfo {
     std::string name;
     std::vector<FieldInfo> fields;
     size_t totalSize;
+    std::vector<std::string> virtualMethods; // Names of virtual methods in VTable order
 };
 
 // Global type registry
@@ -88,11 +89,12 @@ public:
         return instance;
     }
     
-    void registerStruct(const std::string& name, const std::vector<FieldInfo>& fields) {
+    void registerStruct(const std::string& name, const std::vector<FieldInfo>& fields, const std::vector<std::string>& vMethods = {}) {
         StructInfo info;
         info.name = name;
         info.fields = fields;
         info.totalSize = calculateSize(fields);
+        info.virtualMethods = vMethods;
         structs[name] = info;
     }
     
@@ -401,6 +403,20 @@ public:
     CallExprAST(const std::string &Callee,
                 std::vector<std::unique_ptr<ExprAST>> Args)
         : Callee(Callee), Args(std::move(Args)) {}
+    llvm::Value *codegen() override;
+    OType getOType() const override;
+};
+
+/// MethodCallExprAST - Expression class for method calls (obj.method(args)).
+class MethodCallExprAST : public ExprAST {
+    std::unique_ptr<ExprAST> Object;
+    std::string MethodName;
+    std::vector<std::unique_ptr<ExprAST>> Args;
+public:
+    MethodCallExprAST(std::unique_ptr<ExprAST> Object,
+                      const std::string &MethodName,
+                      std::vector<std::unique_ptr<ExprAST>> Args)
+        : Object(std::move(Object)), MethodName(MethodName), Args(std::move(Args)) {}
     llvm::Value *codegen() override;
     OType getOType() const override;
 };
