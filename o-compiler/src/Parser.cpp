@@ -96,14 +96,21 @@ OType Parser::ParseType() {
         getNextToken(); 
         baseType = OType(BaseType::Byte); 
     } else if (curTok.type == TokenType::Identifier) {
-        // Check for user-defined struct types
+        // User-defined types or Generic Parameters
         std::string typeName = curTok.text;
-        if (TypeRegistry::getInstance().hasStruct(typeName)) {
-            getNextToken();
-            baseType = OType(BaseType::Struct, 0, typeName);
-        } else {
-            baseType = OType(BaseType::Void);
+        getNextToken(); // eat identifier
+        
+        std::vector<OType> genArgs;
+        if (curTok.type == TokenType::Less) {
+            getNextToken(); // eat '<'
+            while (curTok.type != TokenType::Greater && curTok.type != TokenType::EoF) {
+                genArgs.push_back(ParseType());
+                if (curTok.type == TokenType::Comma) getNextToken();
+            }
+            if (curTok.type == TokenType::Greater) getNextToken(); // eat '>'
         }
+        
+        baseType = OType(BaseType::Struct, 0, typeName, {}, genArgs);
     } else {
         baseType = OType(BaseType::Void);
     }
@@ -179,6 +186,7 @@ std::unique_ptr<ExprAST> Parser::ParseNewExpr() {
     // Parse Type (simplified for now: Identifier or Primitive)
     OType ElementType;
     std::string ClassName;
+    std::vector<OType> GenericArgs;
     
     if (curTok.type == TokenType::Identifier) {
         ClassName = curTok.text;
@@ -190,6 +198,17 @@ std::unique_ptr<ExprAST> Parser::ParseNewExpr() {
              ElementType = OType(BaseType::Void); // Placeholder
         }
         getNextToken();
+        
+        // Parse generic arguments: <int>
+        if (curTok.type == TokenType::Less) {
+            getNextToken(); // eat '<'
+            while (curTok.type != TokenType::Greater && curTok.type != TokenType::EoF) {
+                GenericArgs.push_back(ParseType());
+                if (curTok.type == TokenType::Comma) getNextToken();
+            }
+            if (curTok.type == TokenType::Greater) getNextToken(); // eat '>'
+        }
+        
     } else if (curTok.type == TokenType::TypeInt) { ElementType = OType(BaseType::Int); getNextToken(); }
     else if (curTok.type == TokenType::TypeFloat) { ElementType = OType(BaseType::Float); getNextToken(); }
     else if (curTok.type == TokenType::TypeBool) { ElementType = OType(BaseType::Bool); getNextToken(); }
@@ -209,6 +228,11 @@ std::unique_ptr<ExprAST> Parser::ParseNewExpr() {
         if (curTok.type != TokenType::RBracket)
             return LogError("Expected ']' after array size");
         getNextToken(); // eat ']'
+        
+        // Update ElementType with generic args if needed
+        if (!GenericArgs.empty()) {
+            ElementType = OType(BaseType::Struct, 0, ClassName, {}, GenericArgs);
+        }
         
         return std::make_unique<NewArrayExprAST>(ElementType, std::move(SizeExpr));
     }
@@ -237,7 +261,7 @@ std::unique_ptr<ExprAST> Parser::ParseNewExpr() {
     }
     getNextToken(); // eat ')'
     
-    return std::make_unique<NewExprAST>(ClassName, std::move(Args));
+    return std::make_unique<NewExprAST>(ClassName, std::move(Args), GenericArgs);
 }
 
 std::unique_ptr<ExprAST> Parser::ParseArrayTypeExpr() {

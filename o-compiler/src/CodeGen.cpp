@@ -17,6 +17,8 @@ std::vector<ScopeLayer> ScopeStack;
 std::map<std::string, OType> FunctionReturnTypes;
 
 std::unordered_map<std::string, llvm::StructType*> StructTypes;
+// Generic Struct Registry for Monomorphization
+std::map<std::string, std::unique_ptr<StructDeclAST>> GenericStructRegistry;
 
 llvm::Function *getFreeFunc() {
     llvm::Function *FreeF = TheModule->getFunction("free");
@@ -119,6 +121,57 @@ void LogError(const char *Str) {
 // Forward declaration
 llvm::StructType* getSliceType(llvm::Type* ElementType);
 
+std::string mangleGenericName(const std::string& baseName, const std::vector<OType>& args) {
+    std::string name = baseName;
+    for (const auto& arg : args) {
+        name += "_";
+        if (arg.base == BaseType::Int) name += "int";
+        else if (arg.base == BaseType::Float) name += "float";
+        else if (arg.base == BaseType::Bool) name += "bool";
+        else if (arg.base == BaseType::Char) name += "char";
+        else if (arg.base == BaseType::Byte) name += "byte";
+        else if (arg.base == BaseType::Struct) {
+             name += arg.structName;
+        }
+        else name += "void";
+    }
+    return name;
+}
+
+void instantiateStruct(const std::string& genericName, const std::vector<OType>& typeArgs) {
+    if (GenericStructRegistry.count(genericName) == 0) return;
+    
+    std::string mangledName = mangleGenericName(genericName, typeArgs);
+    if (StructTypes.count(mangledName)) return; // Already instantiated
+    
+    const auto& genericAST = GenericStructRegistry[genericName];
+    if (genericAST->getGenericParams().size() != typeArgs.size()) {
+        LogError(("Incorrect number of type arguments for " + genericName).c_str());
+        return;
+    }
+    
+    std::map<std::string, OType> typeMap;
+    for (size_t i = 0; i < genericAST->getGenericParams().size(); ++i) {
+        typeMap[genericAST->getGenericParams()[i]] = typeArgs[i];
+    }
+    
+    auto newAST = genericAST->clone(typeMap);
+    newAST->setName(mangledName);
+    newAST->makeConcrete();
+    
+    // Save Context (Builder and Scope)
+    llvm::BasicBlock *SavedInsertBlock = Builder->GetInsertBlock();
+    auto SavedScopeStack = ScopeStack;
+    
+    newAST->codegen();
+    
+    // Restore Context
+    ScopeStack = SavedScopeStack;
+    if (SavedInsertBlock) {
+        Builder->SetInsertPoint(SavedInsertBlock);
+    }
+}
+
 // Helper to translate OType to llvm::Type
 llvm::Type* getLLVMType(const OType& t) {
     llvm::Type* baseType;
@@ -132,6 +185,14 @@ llvm::Type* getLLVMType(const OType& t) {
         case BaseType::Struct: 
             if (StructTypes.find(t.structName) != StructTypes.end()) {
                 baseType = StructTypes[t.structName];
+            } else if (!t.genericArgs.empty()) {
+                instantiateStruct(t.structName, t.genericArgs);
+                std::string mangled = mangleGenericName(t.structName, t.genericArgs);
+                if (StructTypes.count(mangled)) {
+                    baseType = StructTypes[mangled];
+                } else {
+                    baseType = llvm::Type::getVoidTy(*TheContext);
+                }
             } else {
                 baseType = llvm::Type::getVoidTy(*TheContext);
             }
@@ -573,6 +634,10 @@ llvm::Value *MethodCallExprAST::codegen() {
         LogError("Method call on non-struct type");
         return nullptr;
     }
+    
+    if (!ObjType.genericArgs.empty()) {
+        StructName = mangleGenericName(StructName, ObjType.genericArgs);
+    }
 
     std::string MangledName = StructName + "_" + MethodName;
     llvm::Function *CalleeF = TheModule->getFunction(MangledName);
@@ -968,8 +1033,7 @@ llvm::Function *FunctionAST::codegen() {
 void StructDeclAST::codegen() {
     // Skip codegen for generic structs - they need to be instantiated first
     if (isGeneric()) {
-        // For now, just register the generic struct template
-        // Full generic instantiation would be implemented later
+        GenericStructRegistry[Name] = this->clone();
         return;
     }
     
@@ -1193,13 +1257,22 @@ llvm::Value *DerefExprAST::codegenAddress() {
 }
 
 llvm::Value *NewExprAST::codegen() {
+    std::string LookupName = ClassName;
+    
+    // Handle Generics
+    if (!GenericArgs.empty()) {
+        // Trigger instantiation
+        instantiateStruct(ClassName, GenericArgs);
+        LookupName = mangleGenericName(ClassName, GenericArgs);
+    }
+
     // Check if the class/struct exists
-    if (StructTypes.find(ClassName) == StructTypes.end()) {
-        LogError("Unknown class/struct name in 'new' expression");
+    if (StructTypes.find(LookupName) == StructTypes.end()) {
+        LogError(("Unknown class/struct name in 'new' expression: " + LookupName).c_str());
         return nullptr;
     }
     
-    llvm::StructType *StructType = StructTypes[ClassName];
+    llvm::StructType *StructType = StructTypes[LookupName];
     
     // 1. Heap Allocation (malloc)
     llvm::Function *MallocF = TheModule->getFunction("malloc");
@@ -1213,8 +1286,8 @@ llvm::Value *NewExprAST::codegen() {
     
     // Calculate size
     size_t size = 0;
-    if (TypeRegistry::getInstance().hasStruct(ClassName)) {
-        size = TypeRegistry::getInstance().getStruct(ClassName).totalSize;
+    if (TypeRegistry::getInstance().hasStruct(LookupName)) {
+        size = TypeRegistry::getInstance().getStruct(LookupName).totalSize;
     }
     if (size == 0) size = 1; // Minimum allocation
     
@@ -1224,8 +1297,8 @@ llvm::Value *NewExprAST::codegen() {
     // Cast to Struct*
     llvm::Value *ObjPtr = Builder->CreateBitCast(VoidPtr, llvm::PointerType::get(StructType, 0), "objptr");
 
-    // 2. Call Constructor: ClassName_new(this, args...)
-    std::string ConstructorName = ClassName + "_new";
+    // 2. Call Constructor: LookupName_new(this, args...)
+    std::string ConstructorName = LookupName + "_new";
     llvm::Function *Constructor = TheModule->getFunction(ConstructorName);
     
     if (Constructor) {
@@ -1852,6 +1925,10 @@ OType CallExprAST::getOType() const {
 OType MethodCallExprAST::getOType() const {
     OType ObjType = Object->getOType();
     std::string StructName = ObjType.structName;
+    
+    if (!ObjType.genericArgs.empty()) {
+        StructName = mangleGenericName(StructName, ObjType.genericArgs);
+    }
     
     std::string MangledName = StructName + "_" + MethodName;
     if (FunctionReturnTypes.count(MangledName)) return FunctionReturnTypes.at(MangledName);

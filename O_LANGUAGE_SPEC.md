@@ -1,6 +1,6 @@
 # The O Language Specification & Status Report
 **Date:** January 2026
-**Version:** 0.3 (Alpha)
+**Version:** 0.4 (Alpha)
 
 ## 1. Introduction
 "O" is a statically-typed, compiled systems programming language designed to bridge the gap between low-level control (C-style pointers, manual memory management) and high-level safety (RAII, automatic cleanup, strong typing). It targets LLVM IR.
@@ -78,7 +78,7 @@ fn add(int a, int b) -> int {
     *   Implements a **ScopeStack** for symbol resolution.
     *   Implements **Type Tracking** (`NamedTypes`, `getOType`) for strict GEP generation.
 
-### 3.2 Completed Features (Milestones 1, 2, & 3)
+### 3.2 Completed Features (Milestones 1, 2, 3, & 4)
 1.  **Basic Compilation:**
     *   Compiles functions, arithmetic, assignments, and returns.
     *   Links with standard C library (relies on `malloc`/`free`).
@@ -105,37 +105,34 @@ fn add(int a, int b) -> int {
     *   **Constructors:** `new Class()` allocates memory (Heap) and calls the constructor `new()`.
     *   **Inheritance:** `class Child : Parent` inherits fields and methods.
     *   **Dynamic Dispatch:** `virtual` and `override` methods use VTables for runtime polymorphism.
+8.  **Generics (Monomorphization):**
+    *   **Generic Structs:** `struct Box<T> { ... }` supported.
+    *   **Instantiation:** `new Box<int>()` instantiates `Box_int` with full deep copying and type substitution.
+    *   **Method Resolution:** Generic methods are instantiated and resolved correctly.
 
 ### 3.3 Known Limitations & Missing Features (Tech Debt)
-1.  **Generics:**
-    *   *Status:* Parser supports `<T>`. `StructDeclAST` stores generic params.
-    *   *Missing:* Code generation for generics is explicitly skipped. No instantiation logic (monomorphization) exists.
-2.  **Strings:**
+1.  **Strings:**
     *   *Status:* String literals create global `i8*` constants.
     *   *Missing:* No `String` struct/class in stdlib. No string concatenation or manipulation operators.
-3.  **Imports:**
+2.  **Imports:**
     *   `import` keyword is parsed but does nothing. No multi-file compilation/linking logic in the compiler driver.
-4.  **Standard Library:**
+3.  **Standard Library:**
     *   No built-in print (except relying on external linking), math, or IO libraries. Strings fall into this category, since they should be implemented in the standart library.
 
 ---
 
 ## 4. Example Code (Supported)
 ```o
-open class Animal {
-    new() {}
-    virtual fn speak() -> int { return 1; }
-}
-
-class Dog : Animal {
-    new() {}
-    override fn speak() -> int { return 2; }
+struct Box<T> {
+    T val;
+    new(T v) { this.val = v; }
+    fn get() -> T { return this.val; }
 }
 
 fn main() -> int {
-    var d = new Dog();
+    var b = new Box<int>(42);
     
-    // Virtual Method Call (Dynamic Dispatch)
-    return d.speak(); // Returns 2
+    // Calls Box_int_get()
+    return b.get();
 }
 ```

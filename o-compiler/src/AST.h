@@ -5,6 +5,7 @@
 #include <iostream>
 #include <utility>
 #include <unordered_map>
+#include <map>
 
 // LLVM Headers
 #include "llvm/ADT/APFloat.h"
@@ -31,9 +32,10 @@ struct OType {
     int pointerDepth = 0; // 0 = value, 1 = *, 2 = **, etc.
     std::vector<int> arraySizes; // Empty = not array, [3] = 1D, [3,3] = 2D
     std::string structName; // For struct types
+    std::vector<OType> genericArgs; // Generic type arguments like <int> in List<int>
     
-    OType(BaseType b = BaseType::Void, int depth = 0, const std::string& name = "", std::vector<int> arrSizes = {}) 
-        : base(b), pointerDepth(depth), arraySizes(arrSizes), structName(name) {}
+    OType(BaseType b = BaseType::Void, int depth = 0, const std::string& name = "", std::vector<int> arrSizes = {}, std::vector<OType> genArgs = {}) 
+        : base(b), pointerDepth(depth), arraySizes(arrSizes), structName(name), genericArgs(genArgs) {}
     
     // Compatibility constructor for single dimension code
     OType(BaseType b, int depth, const std::string& name, int arrSize) 
@@ -62,6 +64,26 @@ struct OType {
     uint64_t getArrayNumElements() const {
         if (arraySizes.empty()) return 0;
         return arraySizes[0];
+    }
+
+    OType substitute(const std::map<std::string, OType>& map) const {
+        if (map.empty()) return *this;
+        OType newType = *this;
+        if (base == BaseType::Struct && map.count(structName)) {
+            OType replacement = map.at(structName);
+            newType.base = replacement.base;
+            newType.structName = replacement.structName;
+            newType.pointerDepth += replacement.pointerDepth;
+            std::vector<int> combinedSizes = replacement.arraySizes;
+            combinedSizes.insert(combinedSizes.end(), arraySizes.begin(), arraySizes.end());
+            newType.arraySizes = combinedSizes;
+            newType.genericArgs = replacement.genericArgs;
+        }
+        
+        for (auto& arg : newType.genericArgs) {
+            arg = arg.substitute(map);
+        }
+        return newType;
     }
 };
 
@@ -162,6 +184,9 @@ public:
 
     // Get the OType of the expression
     virtual OType getOType() const { return OType(BaseType::Void); }
+
+    // Clone method for deep copy with type substitution
+    virtual std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const = 0;
 };
 
 // 2a. Boolean Node
@@ -171,6 +196,7 @@ public:
     BoolExprAST(bool Val) : Val(Val) {}
     llvm::Value *codegen() override;
     OType getOType() const override { return OType(BaseType::Bool); }
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override { return std::make_unique<BoolExprAST>(Val); }
 };
 
 // 2b. While Loop Node
@@ -181,6 +207,9 @@ public:
     WhileExprAST(std::unique_ptr<ExprAST> Cond, std::unique_ptr<ExprAST> Body)
         : Cond(std::move(Cond)), Body(std::move(Body)) {}
     llvm::Value *codegen() override;
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
+        return std::make_unique<WhileExprAST>(Cond->clone(typeMap), Body->clone(typeMap));
+    }
 };
 
 // 2c. For Loop Node
@@ -195,6 +224,14 @@ public:
         : Init(std::move(Init)), Cond(std::move(Cond)),
           Step(std::move(Step)), Body(std::move(Body)) {}
     llvm::Value *codegen() override;
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
+        return std::make_unique<ForExprAST>(
+            Init ? Init->clone(typeMap) : nullptr,
+            Cond ? Cond->clone(typeMap) : nullptr,
+            Step ? Step->clone(typeMap) : nullptr,
+            Body->clone(typeMap)
+        );
+    }
 };
 
 // 2d. Updated Number Node
@@ -207,6 +244,7 @@ public:
     OType getType() const { return Type; } // Type getter
     double getVal() const { return Val; } // Value getter
     OType getOType() const override { return Type; }
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override { return std::make_unique<NumberExprAST>(Val, Type.substitute(typeMap)); }
 };
 
 /// StringExprAST - Expression class for string literals like "hello"
@@ -216,6 +254,7 @@ public:
     StringExprAST(const std::string &Val) : Val(Val) {}
     llvm::Value *codegen() override;
     OType getOType() const override { return OType(BaseType::Char, 1); } // char*
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override { return std::make_unique<StringExprAST>(Val); }
 };
 
 /// StructDeclAST - Represents a struct declaration
@@ -237,6 +276,11 @@ public:
     void codegen(); // Register the struct type
     const std::string& getName() const { return Name; }
     bool isGeneric() const { return !GenericParams.empty(); }
+    const std::vector<std::string>& getGenericParams() const { return GenericParams; }
+    void setName(const std::string& newName) { Name = newName; }
+    void makeConcrete() { GenericParams.clear(); }
+    
+    std::unique_ptr<StructDeclAST> clone(const std::map<std::string, OType>& typeMap = {}) const;
 };
 
 /// ClassDeclAST - Represents a class declaration with inheritance
@@ -265,6 +309,8 @@ public:
     const std::string& getName() const { return Name; }
     bool hasParent() const { return !ParentName.empty(); }
     bool isOpen() const { return IsOpen; }
+    
+    std::unique_ptr<ClassDeclAST> clone(const std::map<std::string, OType>& typeMap = {}) const;
 };
 
 /// MemberAccessAST - Expression for accessing struct members (obj.field)
@@ -277,6 +323,9 @@ public:
     llvm::Value *codegen() override;
     llvm::Value *codegenAddress() override;
     OType getOType() const override;
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
+        return std::make_unique<MemberAccessAST>(Object->clone(typeMap), FieldName);
+    }
 };
 
 /// ConstructorAST - Represents a struct constructor
@@ -289,6 +338,12 @@ public:
         : Params(std::move(Params)), Body(std::move(Body)) {}
     
     llvm::Function *codegen(const std::string& structName);
+    
+    std::unique_ptr<ConstructorAST> clone(const std::map<std::string, OType>& typeMap = {}) const {
+        std::vector<std::pair<std::string, OType>> NewParams;
+        for(const auto& p : Params) NewParams.push_back(std::make_pair(p.first, p.second.substitute(typeMap)));
+        return std::make_unique<ConstructorAST>(NewParams, Body->clone(typeMap));
+    }
 };
 
 /// AddressOfExprAST - Expression for getting address of a variable (&var)
@@ -299,6 +354,9 @@ public:
         : Operand(std::move(Operand)) {}
     llvm::Value *codegen() override;
     OType getOType() const override;
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
+        return std::make_unique<AddressOfExprAST>(Operand->clone(typeMap));
+    }
 };
 
 /// DerefExprAST - Expression for dereferencing a pointer (*ptr)
@@ -310,17 +368,29 @@ public:
     llvm::Value *codegen() override;
     llvm::Value *codegenAddress() override; // For LHS assignment: *ptr = value
     OType getOType() const override;
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
+        return std::make_unique<DerefExprAST>(Operand->clone(typeMap));
+    }
 };
 
 /// NewExprAST - Expression for object instantiation (new ClassName(args))
 class NewExprAST : public ExprAST {
     std::string ClassName;
+    std::vector<OType> GenericArgs;
     std::vector<std::unique_ptr<ExprAST>> Args;
 public:
-    NewExprAST(const std::string &ClassName, std::vector<std::unique_ptr<ExprAST>> Args)
-        : ClassName(ClassName), Args(std::move(Args)) {}
+    NewExprAST(const std::string &ClassName, std::vector<std::unique_ptr<ExprAST>> Args, std::vector<OType> GenArgs = {})
+        : ClassName(ClassName), Args(std::move(Args)), GenericArgs(GenArgs) {}
     llvm::Value *codegen() override;
-    OType getOType() const override { return OType(BaseType::Struct, 1, ClassName); } // Returns pointer to struct
+    OType getOType() const override { return OType(BaseType::Struct, 1, ClassName, {}, GenericArgs); } // Returns pointer to struct
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
+        OType temp(BaseType::Struct, 0, ClassName, {}, GenericArgs);
+        temp = temp.substitute(typeMap);
+        
+        std::vector<std::unique_ptr<ExprAST>> NewArgs;
+        for(const auto& a : Args) NewArgs.push_back(a->clone(typeMap));
+        return std::make_unique<NewExprAST>(temp.structName, std::move(NewArgs), temp.genericArgs);
+    }
 };
 
 /// NewArrayExprAST - Expression for array allocation (new int[size])
@@ -331,7 +401,10 @@ public:
     NewArrayExprAST(OType ElementType, std::unique_ptr<ExprAST> Size)
         : ElementType(ElementType), Size(std::move(Size)) {}
     llvm::Value *codegen() override;
-    OType getOType() const override; // Returns slice type or array type? Slice usually.
+    OType getOType() const override;
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
+        return std::make_unique<NewArrayExprAST>(ElementType.substitute(typeMap), Size->clone(typeMap));
+    }
 };
 
 /// IndexExprAST - Expression for array indexing (arr[index])
@@ -342,8 +415,11 @@ public:
     IndexExprAST(std::unique_ptr<ExprAST> Array, std::unique_ptr<ExprAST> Index)
         : Array(std::move(Array)), Index(std::move(Index)) {}
     llvm::Value *codegen() override;
-    llvm::Value *codegenAddress() override; // For LHS assignment: arr[i] = value
+    llvm::Value *codegenAddress() override;
     OType getOType() const override;
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
+        return std::make_unique<IndexExprAST>(Array->clone(typeMap), Index->clone(typeMap));
+    }
 };
 
 /// ArrayLiteralExprAST - Expression for array type literals (int[10])
@@ -355,6 +431,9 @@ public:
         : ElementType(ElementType), Size(Size) {}
     llvm::Value *codegen() override;
     OType getOType() const override { return OType(ElementType.base, ElementType.pointerDepth, ElementType.structName, Size); }
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
+        return std::make_unique<ArrayLiteralExprAST>(ElementType.substitute(typeMap), Size);
+    }
 };
 
 /// ArrayInitExprAST - Expression for array initialization {1, 2, 3}
@@ -367,6 +446,11 @@ public:
     llvm::Value *codegen() override;
     OType getType() const { return OType(ElementType.base, 0, ElementType.structName, Elements.size()); }
     OType getOType() const override { return getType(); }
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
+        std::vector<std::unique_ptr<ExprAST>> NewElements;
+        for(const auto& e : Elements) NewElements.push_back(e->clone(typeMap));
+        return std::make_unique<ArrayInitExprAST>(std::move(NewElements), ElementType.substitute(typeMap));
+    }
 };
 
 /// VariableExprAST - Expression class for referencing a variable, like "a".
@@ -381,6 +465,15 @@ public:
     const std::string& getTypeName() const { return TypeName; }
     const std::string& getName() const { return Name; }
     OType getOType() const override;
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
+        std::string newTypeName = TypeName;
+        if (!TypeName.empty()) {
+             OType temp(BaseType::Struct, 0, TypeName);
+             temp = temp.substitute(typeMap);
+             newTypeName = temp.structName;
+        }
+        return std::make_unique<VariableExprAST>(Name, newTypeName);
+    }
 };
 
 /// BinaryExprAST - Expression class for a binary operator (e.g., "+", "==", "&&").
@@ -393,6 +486,9 @@ public:
         : Op(Op), LHS(std::move(LHS)), RHS(std::move(RHS)) {}
     llvm::Value *codegen() override;
     OType getOType() const override;
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
+        return std::make_unique<BinaryExprAST>(Op, LHS->clone(typeMap), RHS->clone(typeMap));
+    }
 };
 
 /// CallExprAST - Expression class for function calls.
@@ -405,6 +501,11 @@ public:
         : Callee(Callee), Args(std::move(Args)) {}
     llvm::Value *codegen() override;
     OType getOType() const override;
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
+        std::vector<std::unique_ptr<ExprAST>> NewArgs;
+        for(const auto& a : Args) NewArgs.push_back(a->clone(typeMap));
+        return std::make_unique<CallExprAST>(Callee, std::move(NewArgs));
+    }
 };
 
 /// MethodCallExprAST - Expression class for method calls (obj.method(args)).
@@ -419,6 +520,11 @@ public:
         : Object(std::move(Object)), MethodName(MethodName), Args(std::move(Args)) {}
     llvm::Value *codegen() override;
     OType getOType() const override;
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
+        std::vector<std::unique_ptr<ExprAST>> NewArgs;
+        for(const auto& a : Args) NewArgs.push_back(a->clone(typeMap));
+        return std::make_unique<MethodCallExprAST>(Object->clone(typeMap), MethodName, std::move(NewArgs));
+    }
 };
 
 // 3. New Block Node
@@ -429,6 +535,11 @@ public:
         : Expressions(std::move(Exprs)) {}
     
     llvm::Value *codegen() override;
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
+        std::vector<std::unique_ptr<ExprAST>> NewExprs;
+        for(const auto& e : Expressions) NewExprs.push_back(e->clone(typeMap));
+        return std::make_unique<BlockExprAST>(std::move(NewExprs));
+    }
 };
 
 // 4. If Expression Node
@@ -441,6 +552,9 @@ public:
         : Cond(std::move(Cond)), Then(std::move(Then)), Else(std::move(Else)) {}
     llvm::Value *codegen() override;
     OType getOType() const override { return Then->getOType(); }
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
+        return std::make_unique<IfExprAST>(Cond->clone(typeMap), Then->clone(typeMap), Else ? Else->clone(typeMap) : nullptr);
+    }
 };
 
 // 4b. Match Expression Node
@@ -450,6 +564,10 @@ struct MatchCase {
     
     MatchCase(std::unique_ptr<ExprAST> Pat, std::unique_ptr<ExprAST> B)
         : Pattern(std::move(Pat)), Body(std::move(B)) {}
+        
+    MatchCase clone(const std::map<std::string, OType>& typeMap = {}) const {
+        return MatchCase(Pattern ? Pattern->clone(typeMap) : nullptr, Body->clone(typeMap));
+    }
 };
 
 class MatchExprAST : public ExprAST {
@@ -464,6 +582,11 @@ public:
         if (!Cases.empty() && Cases[0].Body) return Cases[0].Body->getOType();
         return OType(BaseType::Void);
     }
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
+        std::vector<MatchCase> NewCases;
+        for (const auto& c : Cases) NewCases.push_back(c.clone(typeMap));
+        return std::make_unique<MatchExprAST>(Cond->clone(typeMap), std::move(NewCases));
+    }
 };
 
 // 5. Var Declaration Node: var x = 10; or var arr = int[10];
@@ -477,6 +600,9 @@ public:
                    OType ExplicitType = OType(), bool HasExplicitType = false)
         : Name(Name), Init(std::move(Init)), ExplicitType(ExplicitType), HasExplicitType(HasExplicitType) {}
     llvm::Value *codegen() override;
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
+        return std::make_unique<VarDeclExprAST>(Name, Init ? Init->clone(typeMap) : nullptr, ExplicitType.substitute(typeMap), HasExplicitType);
+    }
 };
 
 // 6. Assignment Node: x = 20; or arr[i] = 20;
@@ -488,6 +614,9 @@ public:
         : LHS(std::move(LHS)), RHS(std::move(RHS)) {}
     llvm::Value *codegen() override;
     OType getOType() const override { return RHS->getOType(); }
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
+        return std::make_unique<AssignmentExprAST>(LHS->clone(typeMap), RHS->clone(typeMap));
+    }
 };
 
 // 7. Return Node: return x;
@@ -497,6 +626,9 @@ public:
     ReturnExprAST(std::unique_ptr<ExprAST> RetVal)
         : RetVal(std::move(RetVal)) {}
     llvm::Value *codegen() override;
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
+        return std::make_unique<ReturnExprAST>(RetVal ? RetVal->clone(typeMap) : nullptr);
+    }
 };
 
 // 9. Delete Node
@@ -507,6 +639,9 @@ public:
         : Operand(std::move(Operand)) {}
     llvm::Value *codegen() override;
     OType getOType() const override { return OType(BaseType::Void); }
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
+        return std::make_unique<DeleteExprAST>(Operand->clone(typeMap));
+    }
 };
 
 // 8. Updated Prototype to store types
@@ -525,6 +660,12 @@ public:
     void setName(const std::string &NewName) { Name = NewName; }
     void injectThisParameter(const std::string &StructName);
     const std::vector<std::pair<std::string, OType>>& getArgs() const { return Args; }
+    
+    std::unique_ptr<PrototypeAST> clone(const std::map<std::string, OType>& typeMap = {}) const {
+        std::vector<std::pair<std::string, OType>> NewArgs;
+        for(const auto& arg : Args) NewArgs.push_back(std::make_pair(arg.first, arg.second.substitute(typeMap)));
+        return std::make_unique<PrototypeAST>(Name, NewArgs, ReturnType.substitute(typeMap));
+    }
 };
 
 /// FunctionAST - Represents a full function definition (Proto + Body).
@@ -537,4 +678,32 @@ public:
         : Proto(std::move(Proto)), Body(std::move(Body)) {}
     llvm::Function *codegen();
     PrototypeAST* getPrototype() { return Proto.get(); }
+    
+    std::unique_ptr<FunctionAST> clone(const std::map<std::string, OType>& typeMap = {}) const {
+        return std::make_unique<FunctionAST>(Proto->clone(typeMap), Body ? Body->clone(typeMap) : nullptr);
+    }
 };
+
+inline std::unique_ptr<StructDeclAST> StructDeclAST::clone(const std::map<std::string, OType>& typeMap) const {
+    std::vector<std::unique_ptr<FunctionAST>> NewMethods;
+    for(const auto& m : Methods) NewMethods.push_back(m->clone(typeMap));
+    std::vector<std::unique_ptr<ConstructorAST>> NewConstructors;
+    for(const auto& c : Constructors) NewConstructors.push_back(c->clone(typeMap));
+    
+    std::vector<std::pair<std::string, OType>> NewFields;
+    for(const auto& f : Fields) NewFields.push_back(std::make_pair(f.first, f.second.substitute(typeMap)));
+    
+    return std::make_unique<StructDeclAST>(Name, GenericParams, NewFields, std::move(NewMethods), std::move(NewConstructors));
+}
+
+inline std::unique_ptr<ClassDeclAST> ClassDeclAST::clone(const std::map<std::string, OType>& typeMap) const {
+    std::vector<std::unique_ptr<FunctionAST>> NewMethods;
+    for(const auto& m : Methods) NewMethods.push_back(m->clone(typeMap));
+    std::vector<std::unique_ptr<ConstructorAST>> NewConstructors;
+    for(const auto& c : Constructors) NewConstructors.push_back(c->clone(typeMap));
+    
+    std::vector<std::pair<std::string, OType>> NewFields;
+    for(const auto& f : Fields) NewFields.push_back(std::make_pair(f.first, f.second.substitute(typeMap)));
+    
+    return std::make_unique<ClassDeclAST>(Name, ParentName, IsOpen, NewFields, std::move(NewMethods), std::move(NewConstructors), VirtualMethods);
+}
