@@ -1,0 +1,21 @@
+struct TestVector<T> {
+    T[16] data;
+    int count;
+
+    new() {
+        this.count = 0;
+    }
+
+    fn push(T val) {
+        if (this.count >= 16) {
+            return; // Just return early
+        }
+        this.data[this.count] = val;
+        this.count = this.count + 1;
+    }
+}
+
+fn main() -> int {
+    var vec = new TestVector<int>();
+    return 0;
+}

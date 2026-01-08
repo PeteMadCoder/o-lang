@@ -1,0 +1,12 @@
+struct ArrayTest<T> {
+    T[5] data;
+    
+    fn get(int index) -> T {
+        return this.data[index];
+    }
+}
+
+fn main() -> int {
+    var arr = new ArrayTest<int>();
+    return 0;
+}

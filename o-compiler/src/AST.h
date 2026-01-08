@@ -58,7 +58,9 @@ struct OType {
         if (arraySizes.empty()) return *this;
         std::vector<int> newSizes = arraySizes;
         newSizes.erase(newSizes.begin());
-        return OType(base, pointerDepth, structName, newSizes);
+        // Preserve all other properties including genericArgs
+        OType result(base, pointerDepth, structName, newSizes, genericArgs);
+        return result;
     }
 
     uint64_t getArrayNumElements() const {
@@ -74,9 +76,14 @@ struct OType {
             newType.base = replacement.base;
             newType.structName = replacement.structName;
             newType.pointerDepth += replacement.pointerDepth;
-            std::vector<int> combinedSizes = replacement.arraySizes;
-            combinedSizes.insert(combinedSizes.end(), arraySizes.begin(), arraySizes.end());
-            newType.arraySizes = combinedSizes;
+            // For array types, preserve the original array dimensions
+            if (!arraySizes.empty()) {
+                std::vector<int> combinedSizes = replacement.arraySizes;
+                combinedSizes.insert(combinedSizes.end(), arraySizes.begin(), arraySizes.end());
+                newType.arraySizes = combinedSizes;
+            } else {
+                newType.arraySizes = replacement.arraySizes;
+            }
             newType.genericArgs = replacement.genericArgs;
         }
         

@@ -1,0 +1,57 @@
+// External C functions
+fn exit(int status);
+
+// --- The Vector Class ---
+// A simpler vector implementation that should work with the current compiler
+struct Vector<T> {
+    T[16] data;  // Fixed-size array instead of pointer
+    int count;
+
+    // Constructor: Creates a vector with fixed capacity
+    new() {
+        this.count = 0;
+    }
+
+    fn push(T val) {
+        if (this.count >= 16) {
+            unsafe {
+                exit(1); // Vector is full
+            }
+        }
+        this.data[this.count] = val;
+        this.count = this.count + 1;
+    }
+
+    fn pop() -> T {
+        if (this.count <= 0) {
+            unsafe {
+                exit(1); // Vector is empty
+            }
+        }
+
+        this.count = this.count - 1;
+        return this.data[this.count];
+    }
+
+    // Operator Overloading for Indexing
+    fn op_index(int idx) -> T {
+        if (idx >= this.count || idx < 0) {
+            unsafe {
+                exit(1); // Bounds check
+            }
+        }
+        return this.data[idx];
+    }
+
+    fn size() -> int {
+        return this.count;
+    }
+
+    fn is_empty() -> bool {
+        return this.count == 0;
+    }
+
+    fn full() -> bool {
+        return this.count >= 16;
+    }
+}

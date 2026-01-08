@@ -1,0 +1,47 @@
+import "std/vector.olang";
+
+fn main() -> int {
+    // Test creating a vector of integers
+    var vec = new Vector<int>();
+
+    // Test pushing elements
+    vec.push(10);
+    vec.push(20);
+    vec.push(30);
+
+    // Test size
+    if (vec.size() != 3) {
+        return 1; // Error
+    }
+
+    // Test indexing
+    if (vec[0] != 10 || vec[1] != 20 || vec[2] != 30) {
+        return 2; // Error
+    }
+
+    // Test pop
+    var last = vec.pop();
+    if (last != 30 || vec.size() != 2) {
+        return 3; // Error
+    }
+
+    // Test remaining elements
+    if (vec[0] != 10 || vec[1] != 20) {
+        return 4; // Error
+    }
+
+    // Test with another type - vector of floats
+    var floatVec = new Vector<float>();
+    floatVec.push(1.5);
+    floatVec.push(2.7);
+
+    if (floatVec.size() != 2) {
+        return 5; // Error
+    }
+
+    if (floatVec[0] != 1.5 || floatVec[1] != 2.7) {
+        return 6; // Error
+    }
+
+    return 0; // Success
+}

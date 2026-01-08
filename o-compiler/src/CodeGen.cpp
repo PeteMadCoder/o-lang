@@ -165,6 +165,12 @@ void instantiateStruct(const std::string& genericName, const std::vector<OType>&
     llvm::BasicBlock *SavedInsertBlock = Builder->GetInsertBlock();
     auto SavedScopeStack = ScopeStack;
     
+    // Clear insertion point to avoid LLVM IR conflicts
+    if (SavedInsertBlock) {
+        Builder->ClearInsertionPoint();
+    }
+    ScopeStack.clear();
+    
     newAST->codegen();
     
     // Restore Context
@@ -196,7 +202,12 @@ llvm::Type* getLLVMType(const OType& t) {
                     baseType = llvm::Type::getVoidTy(*TheContext);
                 }
             } else {
-                baseType = llvm::Type::getVoidTy(*TheContext);
+                // Check if this is a mangled generic type name
+                if (StructTypes.count(t.structName)) {
+                    baseType = StructTypes[t.structName];
+                } else {
+                    baseType = llvm::Type::getVoidTy(*TheContext);
+                }
             }
             break;
         default: baseType = llvm::Type::getVoidTy(*TheContext); break;
@@ -2152,7 +2163,10 @@ OType MemberAccessAST::getOType() const {
         if (TypeRegistry::getInstance().hasStruct(ObjType.structName)) {
             const StructInfo& info = TypeRegistry::getInstance().getStruct(ObjType.structName);
             for (const auto& field : info.fields) {
-                if (field.name == FieldName) return field.type;
+                if (field.name == FieldName) {
+                    // For instantiated generic structs, the field type should already be substituted
+                    return field.type;
+                }
             }
         }
     }
@@ -2206,7 +2220,8 @@ OType NewArrayExprAST::getOType() const {
 
 OType IndexExprAST::getOType() const {
     OType ArrType = Array->getOType();
-    return ArrType.getElementType();
+    OType elemType = ArrType.getElementType();
+    return elemType;
 }
 
 OType DerefExprAST::getOType() const {

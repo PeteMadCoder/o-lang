@@ -1,0 +1,13 @@
+struct SimpleVector<T> {
+    T[5] data;  // Generic type in array
+    int count;
+
+    new() {
+        this.count = 0;
+    }
+}
+
+fn main() -> int {
+    var vec = new SimpleVector<int>();
+    return 0;
+}

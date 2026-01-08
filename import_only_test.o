@@ -1,0 +1,10 @@
+// Just import the vector module to see if that alone causes issues
+import "std/vector.olang";
+
+fn dummy_func() -> int {
+    return 0;
+}
+
+fn main() -> int {
+    return dummy_func();
+}

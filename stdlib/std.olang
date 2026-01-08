@@ -2,6 +2,7 @@
 // Import this to get access to all stdlib functionality
 
 import "std/string.olang";
+import "std/vector.olang";
 import "std/io.olang";
 import "std/math.olang";
 import "std/memory.olang";
