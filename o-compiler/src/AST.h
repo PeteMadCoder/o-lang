@@ -70,26 +70,34 @@ struct OType {
 
     OType substitute(const std::map<std::string, OType>& map) const {
         if (map.empty()) return *this;
+
         OType newType = *this;
+
+        // First, handle the case where this type itself is a generic parameter to be substituted
         if (base == BaseType::Struct && map.count(structName)) {
             OType replacement = map.at(structName);
-            newType.base = replacement.base;
-            newType.structName = replacement.structName;
-            newType.pointerDepth += replacement.pointerDepth;
-            // For array types, preserve the original array dimensions
-            if (!arraySizes.empty()) {
-                std::vector<int> combinedSizes = replacement.arraySizes;
-                combinedSizes.insert(combinedSizes.end(), arraySizes.begin(), arraySizes.end());
-                newType.arraySizes = combinedSizes;
-            } else {
-                newType.arraySizes = replacement.arraySizes;
+
+            // If the replacement has its own array sizes, we need to handle combining them
+            std::vector<int> finalArraySizes = arraySizes; // Preserve original array dimensions
+            if (!replacement.arraySizes.empty()) {
+                // Combine array dimensions: original array dims + replacement array dims
+                finalArraySizes.insert(finalArraySizes.end(),
+                                     replacement.arraySizes.begin(),
+                                     replacement.arraySizes.end());
             }
-            newType.genericArgs = replacement.genericArgs;
+
+            newType = OType(replacement.base,
+                           replacement.pointerDepth + pointerDepth,
+                           replacement.structName,
+                           finalArraySizes,
+                           replacement.genericArgs);
+        } else {
+            // Handle generic arguments recursively
+            for (auto& arg : newType.genericArgs) {
+                arg = arg.substitute(map);
+            }
         }
-        
-        for (auto& arg : newType.genericArgs) {
-            arg = arg.substitute(map);
-        }
+
         return newType;
     }
 };
