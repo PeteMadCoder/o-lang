@@ -2096,6 +2096,11 @@ llvm::Value *MemberAccessAST::codegen() {
     OType FieldType = getOType();
     llvm::Type *LLVMFieldType = getLLVMType(FieldType);
     
+    // For array fields, return the address instead of loading
+    if (FieldType.isArray()) {
+        return FieldPtr;
+    }
+    
     return Builder->CreateLoad(LLVMFieldType, FieldPtr, FieldName);
 }
 
@@ -2126,6 +2131,12 @@ llvm::Value *MemberAccessAST::codegenAddress() {
     // Handle Generics...
     if (!ObjType.genericArgs.empty()) {
         StructName = mangleGenericName(StructName, ObjType.genericArgs);
+    } else if (ObjType.isPointer()) {
+        // For pointer types, check if the pointee type has generic args
+        OType pointeeType = ObjType.getPointeeType();
+        if (!pointeeType.genericArgs.empty()) {
+            StructName = mangleGenericName(pointeeType.structName, pointeeType.genericArgs);
+        }
     }
     
     if (!TypeRegistry::getInstance().hasStruct(StructName)) {
@@ -2159,9 +2170,16 @@ llvm::Value *MemberAccessAST::codegenAddress() {
 OType MemberAccessAST::getOType() const {
     OType ObjType = Object->getOType();
     if (ObjType.base == BaseType::Struct) {
+        // Handle Generics (similar to codegenAddress)
+        std::string StructName = ObjType.structName;
+
+        if (!ObjType.genericArgs.empty()) {
+            StructName = mangleGenericName(ObjType.structName, ObjType.genericArgs);
+        }
+
         // Lookup field type
-        if (TypeRegistry::getInstance().hasStruct(ObjType.structName)) {
-            const StructInfo& info = TypeRegistry::getInstance().getStruct(ObjType.structName);
+        if (TypeRegistry::getInstance().hasStruct(StructName)) {
+            const StructInfo& info = TypeRegistry::getInstance().getStruct(StructName);
             for (const auto& field : info.fields) {
                 if (field.name == FieldName) {
                     // For instantiated generic structs, the field type should already be substituted
