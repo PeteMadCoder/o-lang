@@ -339,19 +339,19 @@ public:
 
 /// ConstructorAST - Represents a struct constructor
 class ConstructorAST {
-    std::vector<std::pair<std::string, OType>> Params; // param name, type
+    std::vector<std::pair<std::string, OType>> Params;
     std::unique_ptr<ExprAST> Body;
 public:
     ConstructorAST(std::vector<std::pair<std::string, OType>> Params,
                    std::unique_ptr<ExprAST> Body)
         : Params(std::move(Params)), Body(std::move(Body)) {}
-    
     llvm::Function *codegen(const std::string& structName);
-    
+    const std::vector<std::pair<std::string, OType>>& getParams() const { return Params; }
     std::unique_ptr<ConstructorAST> clone(const std::map<std::string, OType>& typeMap = {}) const {
+        // ... (clone impl)
         std::vector<std::pair<std::string, OType>> NewParams;
-        for(const auto& p : Params) NewParams.push_back(std::make_pair(p.first, p.second.substitute(typeMap)));
-        return std::make_unique<ConstructorAST>(NewParams, Body->clone(typeMap));
+        for(const auto& p : Params) NewParams.push_back({p.first, p.second.substitute(typeMap)});
+        return std::make_unique<ConstructorAST>(NewParams, Body ? Body->clone(typeMap) : nullptr);
     }
 };
 

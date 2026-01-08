@@ -1,0 +1,70 @@
+// External C functions
+fn strlen(*byte str) -> int;
+fn memcpy(*byte dest, *byte src, int n) -> *void;
+fn malloc(int size) -> *byte;
+fn free(*byte ptr);
+fn printf(*byte str);
+
+// Simple String class with operator overloading
+struct String {
+    *byte buffer;
+    int length;
+
+    new(*char ptr) {
+        var len = 0;
+        unsafe {
+            len = strlen(ptr);
+        }
+        
+        this.length = len;
+        
+        unsafe {
+            this.buffer = malloc(len + 1);
+            memcpy(this.buffer, ptr, len);
+            var end_ptr = &this.buffer[len];
+            *end_ptr = 0;
+        }
+    }
+
+    fn op_index(int idx) -> int {
+        unsafe {
+            var ptr = &this.buffer[idx];
+            return *ptr;
+        }
+    }
+    
+    fn get_char_at(int idx) -> int {
+        unsafe {
+            var ptr = &this.buffer[idx];
+            return *ptr;
+        }
+    }
+}
+
+fn main() -> int {
+    var s1 = new String("Hello");
+    
+    // Test direct method call at index 0
+    var c1 = s1.get_char_at(0);
+    
+    // Test operator overloading: [] at index 0
+    var c2 = s1[0];
+    
+    unsafe {
+        printf("Direct method call result (index 0): ");
+        if (c1 == 72) {
+            printf("72 (correct - 'H')\n");
+        } else {
+            printf("wrong\n");
+        }
+        
+        printf("Operator overload result (index 0): ");
+        if (c2 == 72) {
+            printf("72 (correct - 'H')\n");
+        } else {
+            printf("wrong\n");
+        }
+    }
+    
+    return 0;
+}

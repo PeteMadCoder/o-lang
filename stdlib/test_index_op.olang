@@ -1,0 +1,13 @@
+import "std/io.olang";
+import "string.olang";
+
+fn main() -> int {
+    var s = new String("Hello");
+    var c = s[1]; // 'e'
+    
+    // Print char as int (since we don't have char printing yet easily)
+    Console_print_int(c);
+    Console_println(new String(""));
+    
+    return 0;
+}

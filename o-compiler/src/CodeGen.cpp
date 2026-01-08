@@ -515,6 +515,52 @@ llvm::Value *BinaryExprAST::codegen() {
     llvm::Value *R = RHS->codegen();
     if (!L || !R) return nullptr;
 
+    // Check for Operator Overloading (Structs)
+    OType LType = LHS->getOType();
+    if (LType.base == BaseType::Struct) {
+        std::string OpMethod;
+        if (Op == "+") OpMethod = "op_add";
+        else if (Op == "-") OpMethod = "op_sub";
+        else if (Op == "*") OpMethod = "op_mul";
+        else if (Op == "/") OpMethod = "op_div";
+        else if (Op == "%") OpMethod = "op_mod";
+        else if (Op == "==") OpMethod = "op_eq";
+        else if (Op == "!=") OpMethod = "op_neq";
+        else if (Op == "<") OpMethod = "op_lt";
+        else if (Op == ">") OpMethod = "op_gt";
+        else if (Op == "<=") OpMethod = "op_le";
+        else if (Op == ">=") OpMethod = "op_ge";
+        
+        if (!OpMethod.empty()) {
+            std::string StructName = LType.structName;
+            if (!LType.genericArgs.empty()) {
+                StructName = mangleGenericName(StructName, LType.genericArgs);
+            }
+            std::string MangledName = StructName + "_" + OpMethod;
+            
+            llvm::Function *OpFunc = TheModule->getFunction(MangledName);
+            if (OpFunc) {
+                // Prepare Args: L (this), R
+                std::vector<llvm::Value*> ArgsV;
+                ArgsV.push_back(L); // this
+                ArgsV.push_back(R); // other
+                
+                return Builder->CreateCall(OpFunc, ArgsV, "optmp");
+            }
+        }
+    }
+
+    // Pointer Arithmetic
+    if (L->getType()->isPointerTy() && R->getType()->isIntegerTy()) {
+        if (Op == "+") {
+            // Assume byte-wise arithmetic for void* or byte*
+            return Builder->CreateInBoundsGEP(llvm::Type::getInt8Ty(*TheContext), L, R, "ptradd");
+        } else if (Op == "-") {
+            llvm::Value *NegR = Builder->CreateNeg(R);
+            return Builder->CreateInBoundsGEP(llvm::Type::getInt8Ty(*TheContext), L, NegR, "ptrsub");
+        }
+    }
+
     // Handle type promotion: char/byte to int for arithmetic
     if (L->getType()->isIntegerTy(8) && R->getType()->isIntegerTy(32)) {
         L = Builder->CreateZExt(L, llvm::Type::getInt32Ty(*TheContext), "promote");
@@ -1046,6 +1092,7 @@ llvm::Function *FunctionAST::codegen() {
 }
 
 void StructDeclAST::codegen() {
+    std::cerr << "Generating Struct: " << Name << ". Constructors: " << Constructors.size() << "\n";
     // Skip codegen for generic structs - they need to be instantiated first
     if (isGeneric()) {
         GenericStructRegistry[Name] = this->clone();
@@ -1090,7 +1137,7 @@ void StructDeclAST::codegen() {
     // Register in type registry with correct size
     TypeRegistry::getInstance().registerStruct(Name, fieldInfos, Layout->getSizeInBytes());
     
-    // Generate code for methods with proper name mangling and this pointer
+    // 1. Generate Prototypes for Methods
     for (auto& method : Methods) {
         // Mangle method name: StructName_methodName
         std::string originalName = method->getPrototype()->getName();
@@ -1102,10 +1149,41 @@ void StructDeclAST::codegen() {
         // Inject 'this' parameter as first argument
         method->getPrototype()->injectThisParameter(Name);
         
+        method->getPrototype()->codegen(); // Declare function
+    }
+    
+    // 2. Generate Prototypes for Constructors
+    for (auto& constructor : Constructors) {
+        // Create constructor function name: StructName_new[_ArgType...]
+        std::string funcName = Name + "_new";
+        
+        // Mangle name if parameters exist (simple mangling)
+        std::vector<OType> paramOTypes;
+        for (const auto& param : constructor->getParams()) {
+            paramOTypes.push_back(param.second);
+        }
+        
+        if (!paramOTypes.empty()) {
+            funcName = mangleGenericName(funcName, paramOTypes);
+        }
+        
+        // Params: this, args...
+        std::vector<std::pair<std::string, OType>> args;
+        args.push_back({"this", OType(BaseType::Struct, 1, Name)}); // this*
+        for (const auto& param : constructor->getParams()) {
+            args.push_back(param);
+        }
+        
+        PrototypeAST proto(funcName, args, OType(BaseType::Void));
+        proto.codegen(); // Declare function
+    }
+    
+    // 3. Generate Method Bodies
+    for (auto& method : Methods) {
         method->codegen();
     }
     
-    // Generate code for constructors
+    // 4. Generate Constructor Bodies
     for (auto& constructor : Constructors) {
         constructor->codegen(Name);
     }
@@ -1147,8 +1225,11 @@ llvm::Function *ConstructorAST::codegen(const std::string& structName) {
     // Constructor returns void (it initializes the memory passed in 'this')
     llvm::FunctionType* funcType = llvm::FunctionType::get(llvm::Type::getVoidTy(*TheContext), paramTypes, false);
     
-    // Create function
-    llvm::Function* func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, funcName, TheModule.get());
+    // Check if function already exists
+    llvm::Function* func = TheModule->getFunction(funcName);
+    if (!func) {
+        func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, funcName, TheModule.get());
+    }
     
     // Create basic block
     llvm::BasicBlock* BB = llvm::BasicBlock::Create(*TheContext, "entry", func);
@@ -1270,10 +1351,12 @@ llvm::Value *DerefExprAST::codegen() {
         return nullptr;
     }
     
-    // For newer LLVM, we need to determine the pointee type differently
-    // For now, assume it's an i32 (this would need proper type tracking)
-    llvm::Type *pointeeType = llvm::Type::getInt32Ty(*TheContext);
-    return Builder->CreateLoad(pointeeType, PtrValue, "deref");
+    // Resolve pointee type
+    OType PtrType = Operand->getOType();
+    OType PointeeType = PtrType.getPointeeType();
+    llvm::Type *LLVMType = getLLVMType(PointeeType);
+    
+    return Builder->CreateLoad(LLVMType, PtrValue, "deref");
 }
 
 llvm::Value *DerefExprAST::codegenAddress() {
@@ -1343,6 +1426,9 @@ llvm::Value *NewExprAST::codegen() {
     if (!argTypes.empty()) {
         MangledName = mangleGenericName(ConstructorName, argTypes);
     }
+    
+    // Debug
+    std::cerr << "Looking for constructor: " << MangledName << "\n";
     
     llvm::Function *Constructor = TheModule->getFunction(MangledName);
     
@@ -1576,6 +1662,41 @@ llvm::Value *MatchExprAST::codegen() {
 }
 
 llvm::Value *IndexExprAST::codegen() {
+    // 0. Operator Overloading Check (Structs)
+    OType ArrayOType = Array->getOType();
+    if (ArrayOType.base == BaseType::Struct) {
+        std::string OpMethod = "op_index";
+        std::string StructName = ArrayOType.structName;
+        
+        if (!ArrayOType.genericArgs.empty()) {
+            StructName = mangleGenericName(StructName, ArrayOType.genericArgs);
+        }
+        
+        std::string MangledName = StructName + "_" + OpMethod;
+        llvm::Function *OpFunc = TheModule->getFunction(MangledName);
+        
+        if (OpFunc) {
+            // Prepare Args: Array (this), Index
+            llvm::Value *ArrayVal = nullptr;
+            if (ArrayOType.isPointer()) {
+                ArrayVal = Array->codegen();
+            } else {
+                ArrayVal = Array->codegenAddress();
+            }
+            
+            if (!ArrayVal) return nullptr;
+            
+            llvm::Value *IndexVal = Index->codegen();
+            if (!IndexVal) return nullptr;
+            
+            std::vector<llvm::Value*> ArgsV;
+            ArgsV.push_back(ArrayVal); // this
+            ArgsV.push_back(IndexVal); // index
+            
+            return Builder->CreateCall(OpFunc, ArgsV, "opindextmp");
+        }
+    }
+
     // 1. Get Array Address
     llvm::Value *ArrayAddr = nullptr;
     if (auto VarExpr = dynamic_cast<VariableExprAST*>(Array.get())) {
@@ -1586,7 +1707,7 @@ llvm::Value *IndexExprAST::codegen() {
     if (!ArrayAddr) return nullptr;
     
     // 2. Resolve Type Info from AST
-    OType ArrayOType = Array->getOType();
+    // OType ArrayOType = Array->getOType();
     
     // Check for Slice (Dynamic Array)
     if (ArrayOType.isArray() && ArrayOType.getArrayNumElements() == -1) {
@@ -1843,23 +1964,56 @@ void ClassDeclAST::codegen() {
     // Register in type registry
     TypeRegistry::getInstance().registerStruct(Name, fieldInfos, VirtualMethods);
     
-    // Generate code for methods with name mangling FIRST
+    std::cerr << "Generating method protos...\n";
+    // 1. Generate Prototypes for Methods
     for (auto& method : Methods) {
         std::string originalName = method->getPrototype()->getName();
         std::string mangledName = Name + "_" + originalName;
         method->getPrototype()->setName(mangledName);
         method->getPrototype()->injectThisParameter(Name);
-        method->codegen();
+        method->getPrototype()->codegen(); // Declare function
     }
     
-    // Generate VTable AFTER methods are compiled but BEFORE constructors
+    // 2. Generate Prototypes for Constructors
+    std::cerr << "Starting constructor loop...\n";
+    for (const auto& constructor : Constructors) {
+        std::cerr << "In loop\n";
+        // Create mangled name
+        std::string funcName = Name + "_new";
+        std::vector<OType> paramOTypes;
+        for (const auto& param : constructor->getParams()) {
+            paramOTypes.push_back(param.second);
+        }
+        if (!paramOTypes.empty()) {
+            funcName = mangleGenericName(funcName, paramOTypes);
+        }
+        
+        // Create Prototype
+        // Params: this, args...
+        std::vector<std::pair<std::string, OType>> args;
+        args.push_back({"this", OType(BaseType::Struct, 1, Name)}); // this*
+        for (const auto& param : constructor->getParams()) {
+            args.push_back(param);
+        }
+        
+        PrototypeAST proto(funcName, args, OType(BaseType::Void));
+        proto.codegen(); // Declare function
+        std::cerr << "Generated constructor proto: " << funcName << "\n";
+    }
+    
+    // 3. Generate VTable (needs method declarations)
     if (needsVTable) {
         generateVTable();
     }
 
-    // Generate code for constructors
+    // 4. Generate Method Bodies
+    for (auto& method : Methods) {
+        method->codegen(); // FunctionAST::codegen will lookup existing function
+    }
+
+    // 5. Generate Constructor Bodies
     for (auto& constructor : Constructors) {
-        constructor->codegen(Name);
+        constructor->codegen(Name); // Will lookup existing function
     }
 }
 
@@ -1935,56 +2089,60 @@ llvm::Value *MemberAccessAST::codegen() {
 }
 
 llvm::Value *MemberAccessAST::codegenAddress() {
-    llvm::Value *ObjAddr = nullptr;
-    OType ObjOType = Object->getOType();
+    // 1. Resolve Object Address/Pointer
+    llvm::Value *ObjPtr = nullptr;
     
-    // Strategy: Get the "base pointer" to the struct.
-    if (ObjOType.isPointer()) {
-        ObjAddr = Object->codegen();
+    // If Object is a pointer (like 'this'), we need its value (the address it points to)
+    if (Object->getOType().isPointer()) {
+        ObjPtr = Object->codegen();
     } else {
-        ObjAddr = Object->codegenAddress();
+        // If Object is a struct value, we need its address
+        ObjPtr = Object->codegenAddress();
     }
     
-    if (!ObjAddr) return nullptr;
+    if (!ObjPtr) return nullptr;
     
-    // Handle Slice .ptr (if Obj is addressable)
-    if (ObjOType.isArray() && ObjOType.getArrayNumElements() == -1 && FieldName == "ptr") {
-        llvm::StructType *ST = llvm::cast<llvm::StructType>(getLLVMType(ObjOType));
-        std::vector<llvm::Value*> Indices;
-        Indices.push_back(llvm::ConstantInt::get(llvm::Type::getInt32Ty(*TheContext), 0));
-        Indices.push_back(llvm::ConstantInt::get(llvm::Type::getInt32Ty(*TheContext), 1));
-        return Builder->CreateInBoundsGEP(ST, ObjAddr, Indices, "slice_ptr_addr");
+    // 2. Resolve Field Info
+    OType ObjType = Object->getOType();
+    std::string StructName;
+    
+    if (ObjType.isPointer()) {
+        StructName = ObjType.getPointeeType().structName;
+    } else {
+        StructName = ObjType.structName;
     }
     
-    if (ObjOType.base != BaseType::Struct) {
-        return nullptr;
+    // Handle Generics...
+    if (!ObjType.genericArgs.empty()) {
+        StructName = mangleGenericName(StructName, ObjType.genericArgs);
     }
     
-    std::string StructName = ObjOType.structName;
     if (!TypeRegistry::getInstance().hasStruct(StructName)) {
         return nullptr;
     }
     
     const StructInfo& info = TypeRegistry::getInstance().getStruct(StructName);
     
-    int fieldIndex = -1;
+    int FieldIndex = -1;
     for (size_t i = 0; i < info.fields.size(); ++i) {
         if (info.fields[i].name == FieldName) {
-            fieldIndex = i;
+            FieldIndex = i;
             break;
         }
     }
     
-    if (fieldIndex == -1) return nullptr;
+    if (FieldIndex == -1) return nullptr;
     
-    llvm::StructType *ST = StructTypes[StructName];
-    if (!ST) return nullptr;
+    // 3. Generate GEP
+    llvm::Value *Zero = llvm::ConstantInt::get(llvm::Type::getInt32Ty(*TheContext), 0);
+    llvm::Value *Idx = llvm::ConstantInt::get(llvm::Type::getInt32Ty(*TheContext), FieldIndex);
     
-    std::vector<llvm::Value*> Indices;
-    Indices.push_back(llvm::ConstantInt::get(llvm::Type::getInt32Ty(*TheContext), 0));
-    Indices.push_back(llvm::ConstantInt::get(llvm::Type::getInt32Ty(*TheContext), fieldIndex));
-    
-    return Builder->CreateInBoundsGEP(ST, ObjAddr, Indices, "fieldaddr");
+    return Builder->CreateInBoundsGEP(
+        StructTypes[StructName],
+        ObjPtr,
+        {Zero, Idx},
+        "fieldaddr"
+    );
 }
 
 OType MemberAccessAST::getOType() const {

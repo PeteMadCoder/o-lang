@@ -1,0 +1,48 @@
+// External C functions
+fn strlen(*byte str) -> int;
+fn memcpy(*byte dest, *byte src, int n) -> *void;
+fn malloc(int size) -> *byte;
+fn printf(*byte str);
+
+struct String {
+    *byte buffer;
+    int length;
+
+    new(*char ptr) {
+        unsafe {
+            this.length = strlen(ptr);
+            this.buffer = malloc(this.length + 1);
+            memcpy(this.buffer, ptr, this.length);
+            var end_ptr = &this.buffer[this.length];
+            *end_ptr = 0;
+        }
+    }
+
+    fn op_index(int idx) -> int {
+        unsafe {
+            // Direct approach: get the byte value and return it
+            var result = this.buffer[idx];
+            return result;
+        }
+    }
+}
+
+fn main() -> int {
+    var s = new String("Hello");
+    
+    unsafe {
+        printf("Testing index parameter passing:\n");
+    }
+    
+    var c0 = s[0];
+    var c1 = s[1];
+    var c4 = s[4];
+    
+    unsafe {
+        if (c0 == 72) { printf("s[0] = 'H' SUCCESS\n"); } else { printf("s[0] FAILED\n"); }
+        if (c1 == 101) { printf("s[1] = 'e' SUCCESS\n"); } else { printf("s[1] FAILED\n"); }
+        if (c4 == 111) { printf("s[4] = 'o' SUCCESS\n"); } else { printf("s[4] FAILED\n"); }
+    }
+    
+    return 0;
+}

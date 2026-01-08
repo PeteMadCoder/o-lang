@@ -1,0 +1,48 @@
+// External C functions
+fn strlen(*byte str) -> int;
+fn memcpy(*byte dest, *byte src, int n) -> *void;
+fn malloc(int size) -> *byte;
+fn free(*byte ptr);
+fn printf(*byte str);
+
+// Simple test to isolate the issue
+struct String {
+    *byte buffer;
+    int length;
+
+    new(*char ptr) {
+        this.length = 5; // Hardcode for "Hello"
+        
+        unsafe {
+            this.buffer = malloc(6); // 5 + 1 for null terminator
+            memcpy(this.buffer, ptr, 5);
+            var end_ptr = &this.buffer[5];
+            *end_ptr = 0;
+        }
+    }
+
+    fn op_index(int idx) -> int {
+        unsafe {
+            var ptr = &this.buffer[idx];
+            return *ptr;
+        }
+    }
+}
+
+fn main() -> int {
+    var s1 = new String("Hello");
+    
+    // Test just one character first
+    var c1 = s1[1]; // Should be 'e' (101)
+    
+    unsafe {
+        printf("Testing s1[1]:\n");
+        if (c1 == 101) {
+            printf("SUCCESS: got 'e'\n");
+        } else {
+            printf("FAILED: got wrong value\n");
+        }
+    }
+    
+    return 0;
+}

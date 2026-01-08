@@ -1,0 +1,97 @@
+// External C functions
+fn strlen(*byte str) -> int;
+fn memcpy(*byte dest, *byte src, int n) -> *void;
+fn malloc(int size) -> *byte;
+fn free(*byte ptr);
+fn printf(*byte str);
+
+// Simple String class with operator overloading
+struct String {
+    *byte buffer;
+    int length;
+
+    new(*char ptr) {
+        var len = 0;
+        unsafe {
+            len = strlen(ptr);
+        }
+        
+        this.length = len;
+        
+        unsafe {
+            this.buffer = malloc(len + 1);
+            
+            // Manual copy instead of memcpy to debug
+            var i = 0;
+            while (i < len) {
+                var src_ptr = &ptr[i];
+                var dst_ptr = &this.buffer[i];
+                *dst_ptr = *src_ptr;
+                i = i + 1;
+            }
+            
+            // Null terminate
+            var end_ptr = &this.buffer[len];
+            *end_ptr = 0;
+        }
+    }
+
+    fn op_index(int idx) -> int {
+        unsafe {
+            var ptr = &this.buffer[idx];
+            return *ptr;
+        }
+    }
+    
+    fn debug_buffer() {
+        unsafe {
+            printf("Buffer contents: ");
+            printf(this.buffer);
+            printf("\n");
+            printf("Length: ");
+            // Can't easily print int, so let's check if length matches expected
+            if (this.length == 5) {
+                printf("5 (correct)\n");
+            } else {
+                printf("wrong length\n");
+            }
+        }
+    }
+}
+
+fn main() -> int {
+    var s1 = new String("Hello");
+    
+    unsafe {
+        printf("=== Debug Test ===\n");
+    }
+    
+    s1.debug_buffer();
+    
+    // Test each character
+    var c0 = s1[0];
+    var c1 = s1[1];
+    var c2 = s1[2];
+    var c3 = s1[3];
+    var c4 = s1[4];
+    
+    unsafe {
+        printf("Results:\n");
+        printf("s1[0] = ");
+        if (c0 == 72) { printf("'H' SUCCESS\n"); } else { printf("FAIL\n"); }
+        
+        printf("s1[1] = ");
+        if (c1 == 101) { printf("'e' SUCCESS\n"); } else { printf("FAIL\n"); }
+        
+        printf("s1[2] = ");
+        if (c2 == 108) { printf("'l' SUCCESS\n"); } else { printf("FAIL\n"); }
+        
+        printf("s1[3] = ");
+        if (c3 == 108) { printf("'l' SUCCESS\n"); } else { printf("FAIL\n"); }
+        
+        printf("s1[4] = ");
+        if (c4 == 111) { printf("'o' SUCCESS\n"); } else { printf("FAIL\n"); }
+    }
+    
+    return 0;
+}

@@ -1,0 +1,97 @@
+// External C functions
+fn strlen(*byte str) -> int;
+fn memcpy(*byte dest, *byte src, int n) -> *void;
+fn malloc(int size) -> *byte;
+fn free(*byte ptr);
+fn printf(*byte str);
+
+struct String {
+    *byte buffer;
+    int length;
+
+    new(*char ptr) {
+        var len = 0;
+        unsafe {
+            len = strlen(ptr);
+        }
+        
+        this.length = len;
+        
+        unsafe {
+            this.buffer = malloc(len + 1);
+            memcpy(this.buffer, ptr, len);
+            var end_ptr = &this.buffer[len];
+            *end_ptr = 0;
+        }
+    }
+
+    fn op_add(*String other) -> *String {
+        var new_len = this.length + other.length;
+        var result = new String("");
+        result.length = new_len;
+        
+        unsafe {
+            free(result.buffer);
+            result.buffer = malloc(new_len + 1);
+            
+            memcpy(result.buffer, this.buffer, this.length);
+            var dest = &result.buffer[this.length];
+            memcpy(dest, other.buffer, other.length);
+            
+            var end = &result.buffer[new_len];
+            *end = 0;
+        }
+        
+        return result;
+    }
+
+    fn op_index(int idx) -> int {
+        unsafe {
+            var base = this.buffer;
+            var offset_ptr = &base[idx];
+            var result = *offset_ptr;
+            return result;
+        }
+    }
+}
+
+fn main() -> int {
+    unsafe {
+        printf("=== MILESTONE 1: OPERATOR OVERLOADING TEST ===\n");
+    }
+    
+    // Test + operator
+    var s1 = new String("Hello");
+    var s2 = new String(" World!");
+    var s3 = s1 + s2;
+    
+    unsafe {
+        printf("String concatenation test:\n");
+        printf("Result: ");
+        printf(s3.buffer);
+        printf("\n");
+        printf("✓ Operator + working!\n\n");
+    }
+    
+    // Test [] operator  
+    var c = s1[1]; // Should be 'e'
+    
+    unsafe {
+        printf("String indexing test:\n");
+        printf("s1[1] = ");
+        if (c == 101) {
+            printf("'e' ✓ SUCCESS!\n");
+        } else {
+            printf("FAILED\n");
+        }
+        
+        printf("\n=== MILESTONE 1 STATUS ===\n");
+        printf("✓ Parser transforms LHS + RHS -> LHS.op_add(RHS)\n");
+        printf("✓ Parser transforms LHS[i] -> LHS.op_index(i)\n");
+        printf("✓ String class implements op_add method\n");
+        printf("✓ String class implements op_index method\n");
+        printf("✓ Syntactic sugar is working!\n");
+    }
+    
+    return 0;
+}

@@ -879,6 +879,7 @@ std::unique_ptr<StructDeclAST> Parser::ParseStruct() {
             Methods.push_back(std::move(method));
         } else if (curTok.type == TokenType::New) {
             // Parse constructor
+            std::cerr << "Parsing constructor for " << StructName << "\n";
             auto constructor = ParseConstructor();
             if (!constructor) {
                 LogError("Failed to parse struct constructor");

@@ -1,0 +1,51 @@
+// External C functions
+fn strlen(*byte str) -> int;
+fn memcpy(*byte dest, *byte src, int n) -> *void;
+fn malloc(int size) -> *byte;
+fn free(*byte ptr);
+fn printf(*byte str);
+
+// Simple String class with operator overloading
+struct String {
+    *byte buffer;
+    int length;
+
+    new(*char ptr) {
+        this.length = 5; // Hardcode for "Hello"
+        
+        unsafe {
+            this.buffer = malloc(6);
+            memcpy(this.buffer, ptr, 5);
+            var end_ptr = &this.buffer[5];
+            *end_ptr = 0;
+        }
+    }
+
+    fn op_index(int idx) -> int {
+        unsafe {
+            // Try a different approach - get the base pointer and add offset
+            var base = this.buffer;
+            var offset_ptr = &base[idx];
+            var result = *offset_ptr;
+            return result;
+        }
+    }
+}
+
+fn main() -> int {
+    var s1 = new String("Hello");
+    
+    // Test if operator overloading is working correctly now
+    var c1 = s1[1]; // Should be 'e' (101)
+    
+    unsafe {
+        printf("Testing fixed operator overloading:\n");
+        if (c1 == 101) {
+            printf("SUCCESS: got 'e' (ASCII 101)!\n");
+        } else {
+            printf("Still not working correctly\n");
+        }
+    }
+    
+    return 0;
+}
