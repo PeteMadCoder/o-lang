@@ -59,7 +59,46 @@
     *   `for (init; cond; step) { ... }`
 *   **Return:** `return value;` or `return;`.
 
-### 2.5 Functions
+### 2.6 Operator Overloading
+"O" supports operator overloading for user-defined types (structs) through special method names:
+
+*   **Binary Operators:** `+`, `-`, `*`, `/`, `%`, `==`, `!=`, `<`, `>`, `<=`, `>=`
+*   **Index Operator:** `[]`
+
+**Implementation:**
+*   `LHS + RHS` → `LHS.op_add(RHS)`
+*   `LHS[i]` → `LHS.op_index(i)`
+
+**Example:**
+```o
+struct String {
+    *byte buffer;
+    int length;
+    
+    fn op_add(*String other) -> *String {
+        // String concatenation logic
+        return result;
+    }
+    
+    fn op_index(int idx) -> int {
+        unsafe {
+            return this.buffer[idx];
+        }
+    }
+}
+
+fn main() -> int {
+    var s1 = new String("Hello");
+    var s2 = new String(" World!");
+    
+    var s3 = s1 + s2;        // Calls s1.op_add(s2)
+    var c = s1[1];           // Calls s1.op_index(1)
+    
+    return 0;
+}
+```
+
+### 2.7 Functions
 ```o
 fn add(int a, int b) -> int {
     return a + b;
@@ -113,13 +152,17 @@ fn add(int a, int b) -> int {
     *   `import` keyword implemented (AST Injection).
     *   Recursive dependency resolution with cycle detection.
     *   Path resolution via `-I` flags.
+10. **Operator Overloading:**
+    *   **Syntactic Sugar:** `LHS + RHS` → `LHS.op_add(RHS)`, `LHS[i]` → `LHS.op_index(i)`.
+    *   **Binary Operators:** `+`, `-`, `*`, `/`, `%`, `==`, `!=`, `<`, `>`, `<=`, `>=`.
+    *   **Index Operator:** `[]` for custom indexing behavior.
+    *   **Parser Integration:** Automatic transformation for non-primitive types.
 
 ### 3.3 Known Limitations & Missing Features (Tech Debt)
-1.  **Strings:**
-    *   *Status:* String literals create global `i8*` constants.
-    *   *Missing:* No `String` struct/class in stdlib. No string concatenation or manipulation operators.
-2.  **Standard Library:**
-    *   No built-in print (except relying on external linking), math, or IO libraries. Strings fall into this category, since they should be implemented in the standart library.
+1.  **Standard Library:**
+    *   Basic String class implemented with operator overloading (`+` for concatenation, `[]` for indexing).
+    *   Missing: Comprehensive IO, math, and utility libraries.
+    *   Missing: Built-in print functions (currently relies on external C `printf`).
 
 ---
 
