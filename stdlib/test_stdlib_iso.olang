@@ -1,0 +1,7 @@
+import "string.olang";
+
+fn main() -> int {
+    var s = new String(10);
+    // s is empty
+    return 0;
+}

@@ -151,7 +151,8 @@ Token Lexer::next_token() {
         case '.': return atom(TokenType::Dot);
         case '+': return atom(TokenType::Plus);
         case '*': return atom(TokenType::Star);
-        case '/': return atom(TokenType::Slash); // Added Slash
+        case '/': return atom(TokenType::Slash);
+        case '%': return atom(TokenType::Mod);
         case '<': 
             if (peek() == '=') { advance(); return Token{TokenType::LessEqual, "<=", line, col}; }
             return atom(TokenType::Less);

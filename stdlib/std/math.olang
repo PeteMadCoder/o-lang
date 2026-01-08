@@ -1,0 +1,63 @@
+fn Math_abs(int x) -> int {
+    if (x < 0) {
+        return -x;
+    }
+    return x;
+}
+
+fn Math_abs_f(float x) -> float {
+    if (x < 0.0) {
+        return -x;
+    }
+    return x;
+}
+
+fn Math_min(int a, int b) -> int {
+    if (a < b) {
+        return a;
+    }
+    return b;
+}
+
+fn Math_max(int a, int b) -> int {
+    if (a > b) {
+        return a;
+    }
+    return b;
+}
+
+fn Math_min_f(float a, float b) -> float {
+    if (a < b) {
+        return a;
+    }
+    return b;
+}
+
+fn Math_max_f(float a, float b) -> float {
+    if (a > b) {
+        return a;
+    }
+    return b;
+}
+
+// These will need external C library linking
+// For now, just declare the interface
+fn Math_sin(float x) -> float {
+    // Will call libc sin()
+    return 0.0;
+}
+
+fn Math_cos(float x) -> float {
+    // Will call libc cos()
+    return 0.0;
+}
+
+fn Math_sqrt(float x) -> float {
+    // Will call libc sqrt()
+    return 0.0;
+}
+
+fn Math_pow(float base, float exp) -> float {
+    // Will call libc pow()
+    return 0.0;
+}

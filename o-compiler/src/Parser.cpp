@@ -10,7 +10,8 @@ static std::map<char, int> BinopPrecedence = {
     {'+', 20},
     {'-', 20},
     {'*', 40},
-    {'/', 40}
+    {'/', 40},
+    {'%', 40}
 };
 
 Parser::Parser(Lexer& lex, CompilerDriver& drv) : lexer(lex), driver(drv) {
@@ -44,6 +45,7 @@ int Parser::GetTokPrecedence() {
     if (curTok.type == TokenType::Minus) return 20;
     if (curTok.type == TokenType::Star) return 40;
     if (curTok.type == TokenType::Slash) return 40;
+    if (curTok.type == TokenType::Mod) return 40;
     
     return -1;
 }
@@ -527,6 +529,14 @@ std::unique_ptr<ExprAST> Parser::ParseUnary() {
         auto Operand = ParseUnary(); // Allow chaining: &(&x)
         if (!Operand) return nullptr;
         return std::make_unique<AddressOfExprAST>(std::move(Operand));
+    }
+    
+    // Handle negation operator (-x)
+    if (curTok.type == TokenType::Minus) {
+        getNextToken(); // eat '-'
+        auto Operand = ParseUnary();
+        if (!Operand) return nullptr;
+        return std::make_unique<NegateExprAST>(std::move(Operand));
     }
     
     // Handle dereference operator (unsafe operation)

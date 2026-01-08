@@ -119,6 +119,15 @@ public:
         info.virtualMethods = vMethods;
         structs[name] = info;
     }
+
+    void registerStruct(const std::string& name, const std::vector<FieldInfo>& fields, size_t size, const std::vector<std::string>& vMethods = {}) {
+        StructInfo info;
+        info.name = name;
+        info.fields = fields;
+        info.totalSize = size;
+        info.virtualMethods = vMethods;
+        structs[name] = info;
+    }
     
     bool hasStruct(const std::string& name) const {
         return structs.find(name) != structs.end();
@@ -641,6 +650,19 @@ public:
     OType getOType() const override { return OType(BaseType::Void); }
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
         return std::make_unique<DeleteExprAST>(Operand->clone(typeMap));
+    }
+};
+
+// 10. Negate Node: -x
+class NegateExprAST : public ExprAST {
+    std::unique_ptr<ExprAST> Operand;
+public:
+    NegateExprAST(std::unique_ptr<ExprAST> Operand)
+        : Operand(std::move(Operand)) {}
+    llvm::Value *codegen() override;
+    OType getOType() const override { return Operand->getOType(); }
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
+        return std::make_unique<NegateExprAST>(Operand->clone(typeMap));
     }
 };
 

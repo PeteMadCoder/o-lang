@@ -125,6 +125,8 @@ std::string mangleGenericName(const std::string& baseName, const std::vector<OTy
     std::string name = baseName;
     for (const auto& arg : args) {
         name += "_";
+        for (int i=0; i<arg.pointerDepth; ++i) name += "ptr_"; // Add ptr prefix
+        
         if (arg.base == BaseType::Int) name += "int";
         else if (arg.base == BaseType::Float) name += "float";
         else if (arg.base == BaseType::Bool) name += "bool";
@@ -200,24 +202,21 @@ llvm::Type* getLLVMType(const OType& t) {
         default: baseType = llvm::Type::getVoidTy(*TheContext); break;
     }
     
-    // Apply array type if needed
-    // Iterate in reverse: int[2][3] -> [2 x [3 x i32]]
-    // Inner dimension (3) wraps the base type first.
-    if (t.isArray()) {
-        for (auto it = t.arraySizes.rbegin(); it != t.arraySizes.rend(); ++it) {
-            if (*it == -1) {
-                // Slice: int[] -> { i32, int* }
-                baseType = getSliceType(baseType);
-            } else {
-                // Fixed Array: int[5] -> [5 x int]
-                baseType = llvm::ArrayType::get(baseType, *it);
-            }
+    // Handle Arrays (Inner to Outer)
+    for (auto it = t.arraySizes.rbegin(); it != t.arraySizes.rend(); ++it) {
+        int size = *it;
+        if (size == -1) {
+            // Slice
+            baseType = getSliceType(baseType);
+        } else {
+            // Fixed Array
+            baseType = llvm::ArrayType::get(baseType, size);
         }
     }
     
-    // Apply pointer depth
-    for (int i = 0; i < t.pointerDepth; i++) {
-        baseType = llvm::PointerType::get(baseType, 0);
+    // Handle Pointers
+    for (int i = 0; i < t.pointerDepth; ++i) {
+        baseType = llvm::PointerType::get(*TheContext, 0);
     }
     
     return baseType;
@@ -435,6 +434,20 @@ llvm::Value *DeleteExprAST::codegen() {
     return llvm::Constant::getNullValue(llvm::Type::getInt32Ty(*TheContext));
 }
 
+llvm::Value *NegateExprAST::codegen() {
+    llvm::Value *Val = Operand->codegen();
+    if (!Val) return nullptr;
+    
+    if (Val->getType()->isDoubleTy()) {
+        return Builder->CreateFNeg(Val, "negtmp");
+    } else if (Val->getType()->isIntegerTy()) {
+        return Builder->CreateNeg(Val, "negtmp");
+    }
+    
+    LogError("Invalid type for negation");
+    return nullptr;
+}
+
 llvm::Value *BinaryExprAST::codegen() {
     // Handle short-circuiting logical operators
     if (Op == "&&" || Op == "||") {
@@ -527,6 +540,8 @@ llvm::Value *BinaryExprAST::codegen() {
         return isFloat ? Builder->CreateFMul(L, R, "multmp") : Builder->CreateMul(L, R, "multmp");
     } else if (Op == "/") {
         return isFloat ? Builder->CreateFDiv(L, R, "divtmp") : Builder->CreateSDiv(L, R, "divtmp");
+    } else if (Op == "%") {
+        return isFloat ? Builder->CreateFRem(L, R, "remtmp") : Builder->CreateSRem(L, R, "remtmp");
     } else if (Op == "<") {
         return isFloat ? Builder->CreateFCmpOLT(L, R, "cmptmp") : Builder->CreateICmpSLT(L, R, "cmptmp");
     } else if (Op == ">") {
@@ -1064,8 +1079,16 @@ void StructDeclAST::codegen() {
     llvm::StructType* structType = llvm::StructType::create(*TheContext, fieldTypes, Name);
     StructTypes[Name] = structType;
     
-    // Register in type registry
-    TypeRegistry::getInstance().registerStruct(Name, fieldInfos);
+    // Get Layout for accurate offsets and size
+    const llvm::StructLayout *Layout = TheModule->getDataLayout().getStructLayout(structType);
+    
+    // Update field offsets
+    for(size_t i = 0; i < fieldInfos.size(); ++i) {
+        fieldInfos[i].offset = Layout->getElementOffset(i);
+    }
+    
+    // Register in type registry with correct size
+    TypeRegistry::getInstance().registerStruct(Name, fieldInfos, Layout->getSizeInBytes());
     
     // Generate code for methods with proper name mangling and this pointer
     for (auto& method : Methods) {
@@ -1089,8 +1112,18 @@ void StructDeclAST::codegen() {
 }
 
 llvm::Function *ConstructorAST::codegen(const std::string& structName) {
-    // Create constructor function name: StructName_new
+    // Create constructor function name: StructName_new[_ArgType...]
     std::string funcName = structName + "_new";
+    
+    // Mangle name if parameters exist (simple mangling)
+    std::vector<OType> paramOTypes;
+    for (const auto& param : Params) {
+        paramOTypes.push_back(param.second);
+    }
+    
+    if (!paramOTypes.empty()) {
+        funcName = mangleGenericName(funcName, paramOTypes);
+    }
     
     // Params: this, args...
     std::vector<llvm::Type*> paramTypes;
@@ -1299,7 +1332,24 @@ llvm::Value *NewExprAST::codegen() {
 
     // 2. Call Constructor: LookupName_new(this, args...)
     std::string ConstructorName = LookupName + "_new";
-    llvm::Function *Constructor = TheModule->getFunction(ConstructorName);
+    
+    // Attempt mangled name resolution if args exist
+    std::vector<OType> argTypes;
+    for (auto &Arg : Args) {
+        argTypes.push_back(Arg->getOType());
+    }
+    
+    std::string MangledName = ConstructorName;
+    if (!argTypes.empty()) {
+        MangledName = mangleGenericName(ConstructorName, argTypes);
+    }
+    
+    llvm::Function *Constructor = TheModule->getFunction(MangledName);
+    
+    // Fallback to base name if mangled not found (backward compatibility or void args)
+    if (!Constructor) {
+        Constructor = TheModule->getFunction(ConstructorName);
+    }
     
     if (Constructor) {
         // Prepare arguments: this pointer + user arguments
@@ -1313,14 +1363,25 @@ llvm::Value *NewExprAST::codegen() {
             CallArgs.push_back(ArgVal);
         }
         
-        // Check argument count
-        if (Constructor->arg_size() != CallArgs.size()) {
-             // Try to handle implicit conversions if needed, or just error
-             // For now assume perfect match
-        }
-
         // Call constructor
         Builder->CreateCall(Constructor, CallArgs);
+    } else {
+        // Only error if we expected a constructor and didn't find one.
+        // Default constructor might be implicit (do nothing).
+        if (!Args.empty()) {
+             // Try to print useful error
+             std::string err = "No matching constructor found for " + LookupName + " with arguments: ";
+             for (const auto& t : argTypes) {
+                 // Convert OType to string representation?
+                 // err += ...
+             }
+             // For now simple error
+             // LogError(("No matching constructor found for " + LookupName).c_str());
+             // But actually, we might just proceed with uninitialized memory if no constructor.
+             // But if args provided, it's definitely an error.
+             LogError(("No matching constructor found for " + LookupName + " (tried " + MangledName + ")").c_str());
+             return nullptr;
+        }
     }
     
     return ObjPtr; // Return pointer to the allocated object
@@ -1653,6 +1714,23 @@ llvm::Value *IndexExprAST::codegenAddress() {
         );
     }
     
+    // Check for Pointer Indexing (ptr[i])
+    if (ArrayOType.isPointer()) {
+         llvm::Value *PtrVal = Array->codegen();
+         if (!PtrVal) return nullptr;
+         
+         llvm::Value *IndexVal = Index->codegen();
+         if (!IndexVal) return nullptr;
+         
+         OType ElemOType = ArrayOType.getPointeeType();
+         llvm::Type *ElemLLVMType = getLLVMType(ElemOType);
+         
+         std::vector<llvm::Value*> Indices;
+         Indices.push_back(IndexVal);
+         
+         return Builder->CreateInBoundsGEP(ElemLLVMType, PtrVal, Indices, "ptridx");
+    }
+    
     // Fixed Array
     llvm::Type *ArrayLLVMType = getLLVMType(ArrayOType);
     
@@ -1835,6 +1913,16 @@ llvm::Value *MemberAccessAST::codegen() {
                  return Builder->CreateExtractValue(ObjVal, 0, "len");
              }
          }
+         
+        // Check for Slice Ptr Property
+         if (ObjOType.isArray() && ObjOType.getArrayNumElements() == -1 && FieldName == "ptr") {
+             llvm::Value *ObjVal = Object->codegen();
+             if (!ObjVal) return nullptr;
+             
+             if (ObjVal->getType()->isStructTy()) {
+                 return Builder->CreateExtractValue(ObjVal, 1, "ptr");
+             }
+         }
         
         return nullptr;
     }
@@ -1858,6 +1946,15 @@ llvm::Value *MemberAccessAST::codegenAddress() {
     }
     
     if (!ObjAddr) return nullptr;
+    
+    // Handle Slice .ptr (if Obj is addressable)
+    if (ObjOType.isArray() && ObjOType.getArrayNumElements() == -1 && FieldName == "ptr") {
+        llvm::StructType *ST = llvm::cast<llvm::StructType>(getLLVMType(ObjOType));
+        std::vector<llvm::Value*> Indices;
+        Indices.push_back(llvm::ConstantInt::get(llvm::Type::getInt32Ty(*TheContext), 0));
+        Indices.push_back(llvm::ConstantInt::get(llvm::Type::getInt32Ty(*TheContext), 1));
+        return Builder->CreateInBoundsGEP(ST, ObjAddr, Indices, "slice_ptr_addr");
+    }
     
     if (ObjOType.base != BaseType::Struct) {
         return nullptr;
@@ -1904,6 +2001,13 @@ OType MemberAccessAST::getOType() const {
     // Handle Array/Slice len
     if (ObjType.isArray() && (FieldName == "len" || FieldName == "length")) {
         return OType(BaseType::Int);
+    }
+    // Handle Slice ptr
+    if (ObjType.isArray() && ObjType.getArrayNumElements() == -1 && FieldName == "ptr") {
+        OType ptrType = ObjType;
+        ptrType.arraySizes.clear();
+        ptrType.pointerDepth += 1;
+        return ptrType;
     }
     return OType(BaseType::Void);
 }

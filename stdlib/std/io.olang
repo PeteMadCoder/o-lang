@@ -1,0 +1,66 @@
+import "string.olang";
+
+fn Console_print(*String s) {
+    unsafe {
+        var ptr = s.c_str();
+        printf(ptr);
+    }
+}
+
+fn Console_println(*String s) {
+    Console_print(s);
+    unsafe {
+        var nl = new String("\n");
+        Console_print(nl);
+        // free(nl.buffer); // Leak for now
+    }
+}
+
+fn Console_print_int(int value) {
+    if (value == 0) {
+        var zero_str = new String("0");
+        Console_print(zero_str);
+        return;
+    }
+    
+    var digits = new byte[12]; 
+    var pos = 0;
+    var temp = value;
+    
+    if (temp < 0) {
+        temp = -temp;
+    }
+    
+    while (temp > 0) {
+        var digit = (temp % 10) + 48;
+        digits[pos] = digit; 
+        temp = temp / 10;
+        pos = pos + 1;
+    }
+    
+    if (value < 0) {
+        digits[pos] = 45; // '-'
+        pos = pos + 1;
+    }
+    
+    var result = new String(pos + 1);
+    var i = 0;
+    while (i < pos) {
+        var d = &result.buffer[i];
+        var idx = pos - 1 - i;
+        var val = digits[idx];
+        unsafe {
+            *d = val;
+        }
+        i = i + 1;
+    }
+    
+    // Null terminate
+    unsafe {
+        var end = &result.buffer[pos];
+        *end = 0;
+    }
+    result.length = pos;
+    
+    Console_print(result);
+}

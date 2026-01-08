@@ -1,0 +1,17 @@
+import "std/io.olang";
+import "string.olang";
+
+fn main() -> int {
+    var hello = new String("Hello");
+    var world = new String(" World!");
+    
+    hello.append(world);
+    
+    Console_print(hello);
+    Console_println(new String(""));
+    
+    Console_print_int(42);
+    Console_println(new String(""));
+    
+    return 0;
+}
