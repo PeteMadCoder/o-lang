@@ -1,6 +1,0 @@
-import "string.olang";
-
-fn main() -> int {
-    var s = new String("Hi");
-    return s.length;
-}

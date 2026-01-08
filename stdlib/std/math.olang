@@ -1,63 +1,129 @@
-fn Math_abs(int x) -> int {
+// External C math functions
+fn sin(float x) -> float;
+fn cos(float x) -> float;
+fn sqrt(float x) -> float;
+fn pow(float base, float exp) -> float;
+fn floor(float x) -> float;
+fn ceil(float x) -> float;
+
+// Integer math functions
+fn abs(int x) -> int {
     if (x < 0) {
         return -x;
     }
     return x;
 }
 
-fn Math_abs_f(float x) -> float {
+fn min(int a, int b) -> int {
+    if (a < b) {
+        return a;
+    }
+    return b;
+}
+
+fn max(int a, int b) -> int {
+    if (a > b) {
+        return a;
+    }
+    return b;
+}
+
+fn clamp(int value, int min_val, int max_val) -> int {
+    if (value < min_val) {
+        return min_val;
+    }
+    if (value > max_val) {
+        return max_val;
+    }
+    return value;
+}
+
+// Float math functions
+fn abs_f(float x) -> float {
     if (x < 0.0) {
         return -x;
     }
     return x;
 }
 
-fn Math_min(int a, int b) -> int {
+fn min_f(float a, float b) -> float {
     if (a < b) {
         return a;
     }
     return b;
 }
 
-fn Math_max(int a, int b) -> int {
+fn max_f(float a, float b) -> float {
     if (a > b) {
         return a;
     }
     return b;
 }
 
-fn Math_min_f(float a, float b) -> float {
-    if (a < b) {
-        return a;
+fn clamp_f(float value, float min_val, float max_val) -> float {
+    if (value < min_val) {
+        return min_val;
     }
-    return b;
-}
-
-fn Math_max_f(float a, float b) -> float {
-    if (a > b) {
-        return a;
+    if (value > max_val) {
+        return max_val;
     }
-    return b;
+    return value;
 }
 
-// These will need external C library linking
-// For now, just declare the interface
-fn Math_sin(float x) -> float {
-    // Will call libc sin()
-    return 0.0;
+// Trigonometric functions (using external C library)
+fn sin_f(float x) -> float {
+    unsafe {
+        return sin(x);
+    }
 }
 
-fn Math_cos(float x) -> float {
-    // Will call libc cos()
-    return 0.0;
+fn cos_f(float x) -> float {
+    unsafe {
+        return cos(x);
+    }
 }
 
-fn Math_sqrt(float x) -> float {
-    // Will call libc sqrt()
-    return 0.0;
+fn sqrt_f(float x) -> float {
+    unsafe {
+        return sqrt(x);
+    }
 }
 
-fn Math_pow(float base, float exp) -> float {
-    // Will call libc pow()
+fn pow_f(float base, float exp) -> float {
+    unsafe {
+        return pow(base, exp);
+    }
+}
+
+fn floor_f(float x) -> float {
+    unsafe {
+        return floor(x);
+    }
+}
+
+fn ceil_f(float x) -> float {
+    unsafe {
+        return ceil(x);
+    }
+}
+
+// Utility functions
+fn sign(int x) -> int {
+    if (x > 0) {
+        return 1;
+    }
+    if (x < 0) {
+        return -1;
+    }
+    return 0;
+}
+
+fn sign_f(float x) -> float {
+    if (x > 0.0) {
+        return 1.0;
+    }
+    if (x < 0.0) {
+        return -1.0;
+    }
     return 0.0;
 }
