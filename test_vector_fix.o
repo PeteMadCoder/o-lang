@@ -1,6 +1,0 @@
-import "stdlib/std.olang";
-
-fn main() -> int {
-    var vec = new Vector<int>();
-    return 0;
-}

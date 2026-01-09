@@ -697,6 +697,7 @@ public:
     void setName(const std::string &NewName) { Name = NewName; }
     void injectThisParameter(const std::string &StructName);
     const std::vector<std::pair<std::string, OType>>& getArgs() const { return Args; }
+    OType getReturnType() const { return ReturnType; }
     
     std::unique_ptr<PrototypeAST> clone(const std::map<std::string, OType>& typeMap = {}) const {
         std::vector<std::pair<std::string, OType>> NewArgs;
@@ -715,7 +716,8 @@ public:
         : Proto(std::move(Proto)), Body(std::move(Body)) {}
     llvm::Function *codegen();
     PrototypeAST* getPrototype() { return Proto.get(); }
-    
+    ExprAST* getBody() { return Body.get(); }
+
     std::unique_ptr<FunctionAST> clone(const std::map<std::string, OType>& typeMap = {}) const {
         return std::make_unique<FunctionAST>(Proto->clone(typeMap), Body ? Body->clone(typeMap) : nullptr);
     }
@@ -738,9 +740,13 @@ inline std::unique_ptr<ClassDeclAST> ClassDeclAST::clone(const std::map<std::str
     for(const auto& m : Methods) NewMethods.push_back(m->clone(typeMap));
     std::vector<std::unique_ptr<ConstructorAST>> NewConstructors;
     for(const auto& c : Constructors) NewConstructors.push_back(c->clone(typeMap));
-    
+
     std::vector<std::pair<std::string, OType>> NewFields;
     for(const auto& f : Fields) NewFields.push_back(std::make_pair(f.first, f.second.substitute(typeMap)));
-    
+
     return std::make_unique<ClassDeclAST>(Name, ParentName, IsOpen, NewFields, std::move(NewMethods), std::move(NewConstructors), VirtualMethods);
 }
+
+// Forward declaration for the global registry functions
+void RegisterFunctionProto(std::unique_ptr<PrototypeAST> Proto);
+llvm::Function *GetFunctionFromPrototype(std::string Name);

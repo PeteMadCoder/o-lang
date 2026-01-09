@@ -1,5 +1,0 @@
-fn main() -> int {
-    var arr = int[5];
-    arr[0] = 10;
-    return arr[0];
-}

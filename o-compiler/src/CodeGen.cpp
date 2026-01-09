@@ -20,6 +20,33 @@ std::unordered_map<std::string, llvm::StructType*> StructTypes;
 // Generic Struct Registry for Monomorphization
 std::map<std::string, std::unique_ptr<StructDeclAST>> GenericStructRegistry;
 
+// Global registry for function prototypes to enable lazy symbol resolution during generic instantiation
+std::map<std::string, std::shared_ptr<PrototypeAST>> GlobalFunctionProtos;
+
+// Helper function to register a function prototype in the global registry
+void RegisterFunctionProto(std::unique_ptr<PrototypeAST> Proto) {
+    std::string Name = Proto->getName();
+    GlobalFunctionProtos[Name] = std::shared_ptr<PrototypeAST>(Proto->clone());
+}
+
+// Helper function to look up and codegen a missing function
+llvm::Function *GetFunctionFromPrototype(std::string Name) {
+    auto it = GlobalFunctionProtos.find(Name);
+    if (it != GlobalFunctionProtos.end() && it->second) {
+        // Just return the function if it already exists in the current module
+        llvm::Function *F = TheModule->getFunction(Name);
+        if (F) return F;
+
+        // Otherwise, we need to create it from the prototype
+        // But be very careful here to avoid segfaults
+        auto protoSharedPtr = it->second;
+
+        // Generate code for the function
+        return protoSharedPtr->codegen();
+    }
+    return nullptr;
+}
+
 llvm::Function *getFreeFunc() {
     llvm::Function *FreeF = TheModule->getFunction("free");
     if (!FreeF) {
@@ -142,41 +169,75 @@ std::string mangleGenericName(const std::string& baseName, const std::vector<OTy
 
 void instantiateStruct(const std::string& genericName, const std::vector<OType>& typeArgs) {
     if (GenericStructRegistry.count(genericName) == 0) return;
-    
+
     std::string mangledName = mangleGenericName(genericName, typeArgs);
     if (StructTypes.count(mangledName)) return; // Already instantiated
-    
+
     const auto& genericAST = GenericStructRegistry[genericName];
     if (genericAST->getGenericParams().size() != typeArgs.size()) {
         LogError(("Incorrect number of type arguments for " + genericName).c_str());
         return;
     }
-    
+
     std::map<std::string, OType> typeMap;
     for (size_t i = 0; i < genericAST->getGenericParams().size(); ++i) {
         typeMap[genericAST->getGenericParams()[i]] = typeArgs[i];
     }
-    
+
     auto newAST = genericAST->clone(typeMap);
     newAST->setName(mangledName);
     newAST->makeConcrete();
-    
+
     // Save Context (Builder and Scope)
     llvm::BasicBlock *SavedInsertBlock = Builder->GetInsertBlock();
     auto SavedScopeStack = ScopeStack;
-    
-    // Clear insertion point to avoid LLVM IR conflicts
-    if (SavedInsertBlock) {
-        Builder->ClearInsertionPoint();
-    }
+
+    // For generic instantiation, we need to ensure there's a valid insertion point
+    // Create a temporary function to serve as context for the instantiation
+    llvm::FunctionType *tempFuncType = llvm::FunctionType::get(
+        llvm::Type::getVoidTy(*TheContext), std::vector<llvm::Type*>(), false);
+    llvm::Function *TempFunc = llvm::Function::Create(
+        tempFuncType, llvm::Function::InternalLinkage, "instantiation_context", TheModule.get());
+    llvm::BasicBlock *TempBB = llvm::BasicBlock::Create(*TheContext, "entry", TempFunc);
+    Builder->SetInsertPoint(TempBB);
+
+    // Clear scope stack to avoid conflicts during instantiation
     ScopeStack.clear();
-    
+
+    // Perform the codegen for the new instantiated struct
     newAST->codegen();
-    
+
     // Restore Context
     ScopeStack = SavedScopeStack;
+
+    // Remove the temporary function we created for context
+    TempFunc->eraseFromParent();
+
+    // Restore original insertion point
     if (SavedInsertBlock) {
-        Builder->SetInsertPoint(SavedInsertBlock);
+        // Make sure the original basic block still exists in its function
+        llvm::Function *ParentFunc = SavedInsertBlock->getParent();
+        if (ParentFunc && !ParentFunc->empty()) {
+            // Find the block in the function (it might have moved)
+            bool found = false;
+            for (auto &BB : *ParentFunc) {
+                if (&BB == SavedInsertBlock) {
+                    Builder->SetInsertPoint(&BB);
+                    found = true;
+                    break;
+                }
+            }
+            // If the original block was not found, set to the entry block
+            if (!found) {
+                Builder->SetInsertPoint(&ParentFunc->getEntryBlock());
+            }
+        } else if (ParentFunc) {
+            // If parent function exists but block doesn't, use entry block
+            Builder->SetInsertPoint(&ParentFunc->getEntryBlock());
+        }
+    } else {
+        // If there was no original insertion point, clear it again
+        Builder->ClearInsertionPoint();
     }
 }
 
@@ -619,9 +680,26 @@ llvm::Value *BinaryExprAST::codegen() {
 llvm::Value *CallExprAST::codegen() {
     llvm::Function *CalleeF = TheModule->getFunction(Callee);
     if (!CalleeF) {
-        LogError("Unknown function referenced");
+        // Attempt to recover from missing function during generic instantiation
+        // by looking up the prototype in the global registry
+        CalleeF = GetFunctionFromPrototype(Callee);
+    }
+
+    // 3. --- SEGFAULT PREVENTION ---
+    if (!CalleeF) {
+        // This stops the compiler from crashing when Builder->CreateCall(NULL) happens
+        LogError(("Linker Error: Function '" + Callee + "' is declared but not found during instantiation.").c_str());
         return nullptr;
     }
+    // ------------------------------
+
+    // 4. --- INSERTION POINT CHECK ---
+    // Make sure the builder has a valid insertion point before creating the call
+    if (!Builder->GetInsertBlock()) {
+        LogError(("Call to function '" + Callee + "' cannot be generated: no insertion point available during instantiation.").c_str());
+        return nullptr;
+    }
+    // -------------------------------
 
     if (CalleeF->arg_size() != Args.size()) {
         LogError("Incorrect # arguments passed");
@@ -632,22 +710,22 @@ llvm::Value *CallExprAST::codegen() {
     for (unsigned i = 0, e = Args.size(); i != e; ++i) {
         llvm::Value *ArgVal = Args[i]->codegen();
         if (!ArgVal) return nullptr;
-        
+
         // Implicit Cast: Fixed Array -> Slice
         // Param Type
         llvm::Type *ParamType = CalleeF->getArg(i)->getType();
         llvm::Type *ArgType = ArgVal->getType();
-        
+
         // Check if Param is Slice ({i32, T*})
         bool IsParamSlice = false;
         if (ParamType->isStructTy() && !ParamType->getStructName().starts_with("class.") && !ParamType->getStructName().starts_with("struct.")) {
-            if (ParamType->getStructNumElements() == 2 && 
+            if (ParamType->getStructNumElements() == 2 &&
                 ParamType->getStructElementType(0)->isIntegerTy(32) &&
                 ParamType->getStructElementType(1)->isPointerTy()) {
                 IsParamSlice = true;
             }
         }
-        
+
         // Check if Arg is Fixed Array Value (Load from Alloca<[N x T]>) -> [N x T]
         // Wait, VariableExprAST loads the value. So ArgVal is [N x T].
         if (IsParamSlice && ArgType->isArrayTy()) {
@@ -655,42 +733,49 @@ llvm::Value *CallExprAST::codegen() {
              // But ArgVal is the *value* (loaded). We can't take address of value easily without Alloca.
              // However, VariableExprAST::codegen() does CreateLoad.
              // If we could get the address...
-             
+
              // Trick: If we have the value, we can store it to a temp alloca, then GEP.
              // Or, better: CallExprAST should ask for address if needed? No, too complex refactor.
-             
+
              // Store the array value to a temp stack slot to get an address
-             llvm::Function *TheFunction = Builder->GetInsertBlock()->getParent();
-             llvm::AllocaInst *TempAlloca = CreateEntryBlockAlloca(TheFunction, "tmparray", ArgType);
-             Builder->CreateStore(ArgVal, TempAlloca);
-             
-             // Now decay: Get pointer to first element
-             uint64_t ArraySize = ArgType->getArrayNumElements();
-             
-             llvm::Value *Zero = llvm::ConstantInt::get(llvm::Type::getInt32Ty(*TheContext), 0);
-             std::vector<llvm::Value*> Indices = {Zero, Zero};
-             
-             llvm::Value *DecayedPtr = Builder->CreateInBoundsGEP(
-                 ArgType,
-                 TempAlloca,
-                 Indices,
-                 "decayed_ptr"
-             );
-             
-             // Create Slice
-             llvm::Value *Slice = llvm::UndefValue::get(ParamType);
-             
-             llvm::Value *SizeVal = llvm::ConstantInt::get(llvm::Type::getInt32Ty(*TheContext), ArraySize);
-             Slice = Builder->CreateInsertValue(Slice, SizeVal, 0, "cast_slice_len");
-             
-             // Bitcast ptr if needed (e.g. if Slice expects i8* but we have i32*)
-             // Ideally types match T.
-             llvm::Value *TypedPtr = Builder->CreateBitCast(DecayedPtr, ParamType->getStructElementType(1), "cast_slice_ptr");
-             Slice = Builder->CreateInsertValue(Slice, TypedPtr, 1, "cast_slice_ptr");
-             
-             ArgVal = Slice;
+             llvm::BasicBlock *CurrentBlock = Builder->GetInsertBlock();
+             if (CurrentBlock) {
+                 llvm::Function *TheFunction = CurrentBlock->getParent();
+                 llvm::AllocaInst *TempAlloca = CreateEntryBlockAlloca(TheFunction, "tmparray", ArgType);
+                 Builder->CreateStore(ArgVal, TempAlloca);
+
+                 // Now decay: Get pointer to first element
+                 uint64_t ArraySize = ArgType->getArrayNumElements();
+
+                 llvm::Value *Zero = llvm::ConstantInt::get(llvm::Type::getInt32Ty(*TheContext), 0);
+                 std::vector<llvm::Value*> Indices = {Zero, Zero};
+
+                 llvm::Value *DecayedPtr = Builder->CreateInBoundsGEP(
+                     ArgType,
+                     TempAlloca,
+                     Indices,
+                     "decayed_ptr"
+                 );
+
+                 // Create Slice
+                 llvm::Value *Slice = llvm::UndefValue::get(ParamType);
+
+                 llvm::Value *SizeVal = llvm::ConstantInt::get(llvm::Type::getInt32Ty(*TheContext), ArraySize);
+                 Slice = Builder->CreateInsertValue(Slice, SizeVal, 0, "cast_slice_len");
+
+                 // Bitcast ptr if needed (e.g. if Slice expects i8* but we have i32*)
+                 // Ideally types match T.
+                 llvm::Value *TypedPtr = Builder->CreateBitCast(DecayedPtr, ParamType->getStructElementType(1), "cast_slice_ptr");
+                 Slice = Builder->CreateInsertValue(Slice, TypedPtr, 1, "cast_slice_ptr");
+
+                 ArgVal = Slice;
+             } else {
+                 // If there's no insertion block, we can't create the slice conversion
+                 LogError("Cannot create slice conversion: no insertion point available during instantiation.");
+                 return nullptr;
+             }
         }
-        
+
         ArgsV.push_back(ArgVal);
     }
 
@@ -1056,6 +1141,14 @@ llvm::Function *PrototypeAST::codegen() {
 
     FunctionReturnTypes[Name] = ReturnType;
 
+    // Register the prototype in the global registry for lazy symbol resolution
+    // This allows generic instantiations to find external function declarations
+    if (GlobalFunctionProtos.find(Name) == GlobalFunctionProtos.end()) {
+        // We need to create a copy of the prototype to store in the registry
+        // Using shared_ptr to allow sharing across parsers
+        GlobalFunctionProtos[Name] = std::shared_ptr<PrototypeAST>(this->clone());
+    }
+
     unsigned Idx = 0;
     for (auto &Arg : F->args())
         Arg.setName(Args[Idx++].first);
@@ -1064,38 +1157,85 @@ llvm::Function *PrototypeAST::codegen() {
 }
 
 llvm::Function *FunctionAST::codegen() {
-    llvm::Function *TheFunction = TheModule->getFunction(Proto->getName());
-    if (!TheFunction) TheFunction = Proto->codegen();
+    std::string functionName = Proto->getName();
+
+    // Register the prototype in the global registry for external functions
+    // This is critical for deferred generic instantiation to find external declarations
+    // Make sure the prototype is in the global registry
+    if (GlobalFunctionProtos.find(functionName) == GlobalFunctionProtos.end()) {
+        // Create a copy of the prototype to store in the registry using shared_ptr
+        GlobalFunctionProtos[functionName] = std::shared_ptr<PrototypeAST>(Proto->clone());
+    }
+
+    // Ensure the function is created in the module during import
+    // This is critical for external function declarations to be available during instantiation
+    llvm::Function *TheFunction = TheModule->getFunction(functionName);
+    if (!TheFunction) {
+        // If the function doesn't exist in the module, create it from the prototype
+        TheFunction = Proto->codegen();
+    }
     if (!TheFunction) return nullptr;
 
+    // For external function declarations (no body), just return the function
     if (!Body) return TheFunction;
 
-    llvm::BasicBlock *BB = llvm::BasicBlock::Create(*TheContext, "entry", TheFunction);
-    Builder->SetInsertPoint(BB);
+    // If we already have a valid insertion point in the right function, use it!
+    // This happens during generic instantiation when StructDeclAST sets the insertion point
+    llvm::BasicBlock *CurrentBlock = Builder->GetInsertBlock();
+    if (CurrentBlock && CurrentBlock->getParent() == TheFunction) {
+        // We're already in the right function, just process the body
+        ScopeStack.clear();
+        EnterScope(); // Function Scope
 
-    ScopeStack.clear();
-    EnterScope(); // Function Scope
-
-    // Register types from prototype
-    const auto& ProtoArgs = Proto->getArgs();
-    for (const auto& ArgPair : ProtoArgs) {
-        AddVariableType(ArgPair.first, ArgPair.second);
-    }
-
-    for (auto &Arg : TheFunction->args()) {
-        llvm::AllocaInst *Alloca = CreateEntryBlockAlloca(TheFunction, std::string(Arg.getName()), Arg.getType());
-        Builder->CreateStore(&Arg, Alloca);
-        AddVariable(std::string(Arg.getName()), Alloca);
-    }
-
-
-    if (llvm::Value *RetVal = Body->codegen()) {
-        // Only insert return if the block is not terminated
-        if (!Builder->GetInsertBlock()->getTerminator()) {
-             Builder->CreateRet(RetVal);
+        // Register types from prototype
+        const auto& ProtoArgs = Proto->getArgs();
+        for (const auto& ArgPair : ProtoArgs) {
+            AddVariableType(ArgPair.first, ArgPair.second);
         }
-        llvm::verifyFunction(*TheFunction);
-        return TheFunction;
+
+        for (auto &Arg : TheFunction->args()) {
+            llvm::AllocaInst *Alloca = CreateEntryBlockAlloca(TheFunction, std::string(Arg.getName()), Arg.getType());
+            Builder->CreateStore(&Arg, Alloca);
+            AddVariable(std::string(Arg.getName()), Alloca);
+        }
+
+        if (llvm::Value *RetVal = Body->codegen()) {
+            // Only insert return if the block is not terminated
+            if (!Builder->GetInsertBlock()->getTerminator()) {
+                 Builder->CreateRet(RetVal);
+            }
+            llvm::verifyFunction(*TheFunction);
+            return TheFunction;
+        }
+    } else {
+        // Standard function compilation - create new block
+        llvm::BasicBlock *BB = llvm::BasicBlock::Create(*TheContext, "entry", TheFunction);
+        Builder->SetInsertPoint(BB);
+
+        ScopeStack.clear();
+        EnterScope(); // Function Scope
+
+        // Register types from prototype
+        const auto& ProtoArgs = Proto->getArgs();
+        for (const auto& ArgPair : ProtoArgs) {
+            AddVariableType(ArgPair.first, ArgPair.second);
+        }
+
+        for (auto &Arg : TheFunction->args()) {
+            llvm::AllocaInst *Alloca = CreateEntryBlockAlloca(TheFunction, std::string(Arg.getName()), Arg.getType());
+            Builder->CreateStore(&Arg, Alloca);
+            AddVariable(std::string(Arg.getName()), Alloca);
+        }
+
+
+        if (llvm::Value *RetVal = Body->codegen()) {
+            // Only insert return if the block is not terminated
+            if (!Builder->GetInsertBlock()->getTerminator()) {
+                 Builder->CreateRet(RetVal);
+            }
+            llvm::verifyFunction(*TheFunction);
+            return TheFunction;
+        }
     }
 
     TheFunction->eraseFromParent();
@@ -1189,9 +1329,106 @@ void StructDeclAST::codegen() {
         proto.codegen(); // Declare function
     }
     
-    // 3. Generate Method Bodies
+    // 3. CONTEXT PRESERVATION AND METHOD GENERATION
+    // We are likely inside 'main' or another function right now.
+    // We must save this location so we don't accidentally inject generic code into it.
+    llvm::BasicBlock *OldBlock = Builder->GetInsertBlock();
+
+    // 4. DETACH BUILDER temporarily
+    // This prevents the new methods from writing into 'main' if they fail to set a block.
+    Builder->ClearInsertionPoint();
+
+    // 5. Generate Method Bodies with proper context management
     for (auto& method : Methods) {
-        method->codegen();
+        // A. Generate the Function Declaration (Prototype)
+        llvm::Function *TheFunction = method->getPrototype()->codegen();
+        if (!TheFunction) continue;
+
+        // B. FORCE VALID CONTEXT (The Fix)
+        // Create a dedicated entry block for this method immediately.
+        llvm::BasicBlock *MethodBlock = llvm::BasicBlock::Create(*TheContext, "entry", TheFunction);
+        Builder->SetInsertPoint(MethodBlock);
+
+        // C. GENERATE BODY
+        // If the method has a body, we need to process it carefully
+        if (method->getBody()) {
+            // Process the method body with proper variable setup
+            ScopeStack.clear();
+            EnterScope(); // Function Scope
+
+            // Register types from prototype
+            const auto& ProtoArgs = method->getPrototype()->getArgs();
+            for (const auto& ArgPair : ProtoArgs) {
+                AddVariableType(ArgPair.first, ArgPair.second);
+            }
+
+            // Set up arguments in the function
+            for (auto &Arg : TheFunction->args()) {
+                llvm::AllocaInst *Alloca = CreateEntryBlockAlloca(TheFunction, std::string(Arg.getName()), Arg.getType());
+                Builder->CreateStore(&Arg, Alloca);
+                AddVariable(std::string(Arg.getName()), Alloca);
+            }
+
+            // Generate the method body
+            // This is where calls to external functions like 'exit' are processed
+            llvm::Value *RetVal = method->getBody()->codegen();
+
+            // Add return instruction if block is not terminated
+            if (!Builder->GetInsertBlock()->getTerminator()) {
+                if (method->getPrototype()->getReturnType().base == BaseType::Void) {
+                    Builder->CreateRetVoid();
+                } else {
+                    // For non-void functions, return a default value
+                    llvm::Type *retType = getLLVMType(method->getPrototype()->getReturnType());
+                    if (retType->isIntegerTy()) {
+                        Builder->CreateRet(llvm::ConstantInt::get(retType, 0));
+                    } else if (retType->isDoubleTy()) {
+                        Builder->CreateRet(llvm::ConstantFP::get(*TheContext, llvm::APFloat(0.0)));
+                    } else {
+                        Builder->CreateRet(llvm::UndefValue::get(retType));
+                    }
+                }
+            }
+        } else {
+            // For methods without body, just add a return
+            if (method->getPrototype()->getReturnType().base == BaseType::Void) {
+                Builder->CreateRetVoid();
+            } else {
+                llvm::Type *retType = getLLVMType(method->getPrototype()->getReturnType());
+                if (retType->isIntegerTy()) {
+                    Builder->CreateRet(llvm::ConstantInt::get(retType, 0));
+                } else if (retType->isDoubleTy()) {
+                    Builder->CreateRet(llvm::ConstantFP::get(*TheContext, llvm::APFloat(0.0)));
+                } else {
+                    Builder->CreateRet(llvm::UndefValue::get(retType));
+                }
+            }
+        }
+
+        // D. VALIDATE
+        // Ensure the block has a terminator (ret void/ret val)
+        llvm::BasicBlock *CurrentMethodBlock = Builder->GetInsertBlock();
+        if (CurrentMethodBlock && !CurrentMethodBlock->getTerminator()) {
+             if (method->getPrototype()->getReturnType().base == BaseType::Void) {
+                 Builder->CreateRetVoid();
+             } else {
+                 // Return default 0/null for safety if user forgot return
+                 llvm::Type *retType = getLLVMType(method->getPrototype()->getReturnType());
+                 llvm::Value *defaultValue = llvm::Constant::getNullValue(retType);
+                 Builder->CreateRet(defaultValue);
+             }
+        }
+
+        // Optional: LLVM sanity check
+        llvm::verifyFunction(*TheFunction);
+    }
+
+    // 6. RESTORE CONTEXT
+    // Put the builder back where it was (e.g., inside 'main') so subsequent code works.
+    if (OldBlock) {
+        Builder->SetInsertPoint(OldBlock);
+    } else {
+        Builder->ClearInsertionPoint();
     }
     
     // 4. Generate Constructor Bodies

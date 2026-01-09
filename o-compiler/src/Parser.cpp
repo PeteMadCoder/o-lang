@@ -1,5 +1,6 @@
 #include "Parser.h"
 #include "CompilerDriver.h"
+#include "AST.h"  // Include AST.h to access the global registry functions
 #include <iostream>
 #include <cassert>
 
@@ -829,16 +830,26 @@ std::unique_ptr<FunctionAST> Parser::ParseDefinition() {
     auto Proto = ParsePrototype();
     if (!Proto) return nullptr;
 
-    if (curTok.type == TokenType::Semicolon) {
-            getNextToken(); // eat ;
-            return std::make_unique<FunctionAST>(std::move(Proto), nullptr);
+    // Check if this is an extern declaration (semicolon after prototype)
+    bool isExtern = (curTok.type == TokenType::Semicolon);
+
+    // --- CRITICAL FIX ---
+    // Explicitly call the global registration function.
+    // Do this for EVERY function, especially those with no body (externs).
+    auto ProtoForAST = Proto->clone();  // Clone the prototype to preserve it for the AST
+    RegisterFunctionProto(std::move(Proto));  // Register the original in the global registry
+    // --------------------
+
+    if (isExtern) {
+        getNextToken(); // eat ;
+        return std::make_unique<FunctionAST>(std::move(ProtoForAST), nullptr);
     }
 
     if (curTok.type != TokenType::LBrace) return nullptr;
-    
-    auto Body = ParseBlock(); 
+
+    auto Body = ParseBlock();
     if (Body) {
-        return std::make_unique<FunctionAST>(std::move(Proto), std::move(Body));
+        return std::make_unique<FunctionAST>(std::move(ProtoForAST), std::move(Body));
     }
     return nullptr;
 }

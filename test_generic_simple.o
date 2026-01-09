@@ -1,8 +1,0 @@
-struct Box<T> {
-    T value;
-}
-
-fn main() -> int {
-    var box = new Box<int>();
-    return 0;
-}
