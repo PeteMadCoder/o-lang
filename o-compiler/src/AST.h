@@ -294,16 +294,19 @@ public:
                   std::vector<std::pair<std::string, OType>> Fields,
                   std::vector<std::unique_ptr<FunctionAST>> Methods = {},
                   std::vector<std::unique_ptr<ConstructorAST>> Constructors = {})
-        : Name(Name), GenericParams(std::move(GenericParams)), Fields(std::move(Fields)), 
+        : Name(Name), GenericParams(std::move(GenericParams)), Fields(std::move(Fields)),
           Methods(std::move(Methods)), Constructors(std::move(Constructors)) {}
-    
+
     void codegen(); // Register the struct type
     const std::string& getName() const { return Name; }
     bool isGeneric() const { return !GenericParams.empty(); }
     const std::vector<std::string>& getGenericParams() const { return GenericParams; }
+    const std::vector<std::pair<std::string, OType>>& getFields() const { return Fields; }
+    const std::vector<std::unique_ptr<FunctionAST>>& getMethods() const { return Methods; }
+    const std::vector<std::unique_ptr<ConstructorAST>>& getConstructors() const { return Constructors; }
     void setName(const std::string& newName) { Name = newName; }
     void makeConcrete() { GenericParams.clear(); }
-    
+
     std::unique_ptr<StructDeclAST> clone(const std::map<std::string, OType>& typeMap = {}) const;
 };
 
@@ -362,6 +365,7 @@ public:
         : Params(std::move(Params)), Body(std::move(Body)) {}
     llvm::Function *codegen(const std::string& structName);
     const std::vector<std::pair<std::string, OType>>& getParams() const { return Params; }
+    ExprAST* getBody() { return Body.get(); }
     std::unique_ptr<ConstructorAST> clone(const std::map<std::string, OType>& typeMap = {}) const {
         // ... (clone impl)
         std::vector<std::pair<std::string, OType>> NewParams;

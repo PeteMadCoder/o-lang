@@ -1,0 +1,11 @@
+fn main() -> int {
+    // Test let with explicit type
+    let x: int = 5;
+    let y: float = 3.14;
+    let flag: bool = true;
+    
+    // This should cause a compile error:
+    // x = 10;  // Cannot reassign constant
+    
+    return x;
+}

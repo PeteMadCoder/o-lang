@@ -1,0 +1,4 @@
+fn main() -> int {
+    var x;  // This should trigger an error - no type or initializer
+    return 0;
+}

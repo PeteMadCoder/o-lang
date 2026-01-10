@@ -1,0 +1,23 @@
+struct Point {
+    int x;
+    int y;
+    
+    new(int x, int y) {
+        this.x = x;
+        this.y = y;
+    }
+}
+
+fn main() -> int {
+    // Test with structs
+    var p = new Point(10, 20);
+    let p_const = new Point(30, 40);
+    
+    // This should work - modifying fields of a mutable variable
+    p.x = 100;
+    
+    // This should work - accessing fields of a constant (but not reassigning the variable)
+    var val = p_const.x;
+    
+    return p.x + val;
+}

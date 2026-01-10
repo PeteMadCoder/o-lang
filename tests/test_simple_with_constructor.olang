@@ -1,0 +1,23 @@
+// Test with a simple constructor
+struct SimpleWithConstructor<T> {
+    T value;
+    
+    new() {
+        // Default constructor - just initialize to zero
+    }
+    
+    fn set_value(T val) {
+        this.value = val;
+    }
+    
+    fn get_value() -> T {
+        return this.value;
+    }
+}
+
+fn main() -> int {
+    var container = new SimpleWithConstructor<int>();
+    container.set_value(42);
+    var result = container.get_value();
+    return result;
+}

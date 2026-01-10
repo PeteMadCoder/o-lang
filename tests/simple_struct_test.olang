@@ -1,0 +1,12 @@
+struct SimpleStruct {
+    int value;
+    
+    new(int val) {
+        this.value = val;
+    }
+}
+
+fn main() -> int {
+    var s = new SimpleStruct(42);
+    return s.value;
+}

@@ -1,0 +1,31 @@
+import "std/vector.olang";
+import "std/io.olang";
+
+fn main() -> int {
+    var vec = new Vector<int>();
+    
+    vec.push(10);
+    vec.push(20);
+    vec.push(30);
+    
+    var size = vec.size();
+    print_int(size);
+    println(" elements in vector");
+    
+    var first = vec[0];
+    var second = vec[1];
+    var third = vec[2];
+    
+    print_int(first);
+    println("");
+    print_int(second);
+    println("");
+    print_int(third);
+    println("");
+    
+    var popped = vec.pop();
+    print_int(popped);
+    println(" was popped");
+    
+    return 0;
+}

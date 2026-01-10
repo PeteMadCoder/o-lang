@@ -1,0 +1,6 @@
+import "math.olang";
+
+fn main() -> int {
+    var result = min(5, 3);
+    return result;
+}

@@ -1,0 +1,47 @@
+// Simple O language example demonstrating core features
+// This avoids the buggy import and generic systems
+
+// External C functions declaration
+fn printf(*byte str);
+fn malloc(int size) -> *byte;
+fn free(*byte ptr);
+
+// Simple struct without generics
+struct Point {
+    int x;
+    int y;
+
+    // Constructor
+    new(int x_val, int y_val) {
+        this.x = x_val;
+        this.y = y_val;
+    }
+
+    // Method - this may not work due to compiler bugs
+    fn get_x() -> int {
+        return this.x;
+    }
+}
+
+fn main() -> int {
+    // Variable declarations
+    var x = 10;      // Type inference
+    var y: int = 20; // Explicit type
+    
+    // Basic arithmetic
+    var sum = x + y;
+    
+    // Control flow
+    if (sum > 25) {
+        // This would use printf directly since import system is buggy
+        unsafe {
+            // Note: This is simplified - proper string handling would be needed
+            // For now, just return the computed value
+        }
+    }
+    
+    // Struct usage (may not work due to compiler bugs)
+    var p = new Point(5, 7);
+    
+    return sum;  // Return computed value
+}

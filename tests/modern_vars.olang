@@ -1,0 +1,18 @@
+fn main() -> int {
+    // 1. Inference & Mutability
+    var x = 10;
+    x = 20;     // OK
+
+    // 2. Explicit Type
+    var y: int = 100;
+    
+    // 3. Constants
+    let z = 50;
+    
+    // 4. Test logic
+    if (x == 20 && y == 100 && z == 50) {
+        return 0; // Success
+    }
+    
+    return 1; // Failure
+}

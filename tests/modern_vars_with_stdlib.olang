@@ -1,0 +1,14 @@
+import "std/string.olang";
+import "std/io.olang";
+
+fn main() -> int {
+    var msg = new String("Hello, World!");
+    var x: int = 42;
+    let y: int = 100;
+    
+    println(msg);
+    print_int(x);
+    print_char(65); // Print 'A'
+    
+    return x;
+}

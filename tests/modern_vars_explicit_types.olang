@@ -1,0 +1,13 @@
+fn main() -> int {
+    // Test var with explicit type
+    var x: int = 5;
+    var y: float = 3.14;
+    var flag: bool = true;
+    
+    // Test mutability
+    x = 10;
+    y = 2.71;
+    flag = false;
+    
+    return x;
+}

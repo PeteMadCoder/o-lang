@@ -1,0 +1,14 @@
+import "math.olang";
+
+fn main() -> int {
+    // Test math functions
+    var a = 10;
+    var b = 20;
+    var minimum = min(a, b);
+    var maximum = max(a, b);
+    var absolute = abs(-15);
+
+    var result = minimum + maximum + absolute;  // 10 + 20 + 15 = 45
+
+    return result;
+}

@@ -1,0 +1,5 @@
+fn main() -> int {
+    let x = 42;
+    x = 100;  // This should cause a compile error
+    return x;
+}

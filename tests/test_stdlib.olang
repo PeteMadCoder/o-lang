@@ -1,0 +1,12 @@
+import "io.olang";
+import "string.olang";
+
+fn main() -> int {
+    var msg = new String("Hello, World!");
+    println(&msg);
+
+    var x = 42;
+    print_int(x);
+
+    return 0;
+}

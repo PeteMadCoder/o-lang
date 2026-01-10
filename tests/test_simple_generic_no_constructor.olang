@@ -1,0 +1,20 @@
+// Test without constructors - just a simple generic struct
+struct SimpleContainer<T> {
+    T value;
+    int count;
+
+    fn set_value(T val) {
+        this.value = val;
+    }
+    
+    fn get_value() -> T {
+        return this.value;
+    }
+}
+
+fn main() -> int {
+    var container = new SimpleContainer<int>();
+    container.set_value(42);
+    var result = container.get_value();
+    return result;
+}

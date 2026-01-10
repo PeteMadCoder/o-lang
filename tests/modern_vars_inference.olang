@@ -1,0 +1,15 @@
+fn main() -> int {
+    // Test type inference
+    var x = 42;        // Should infer int
+    var y = 3.14;      // Should infer float
+    var flag = true;   // Should infer bool
+    let z = 100;       // Should infer int and be immutable
+    
+    // Test mutability
+    x = 24;
+    y = 1.41;
+    flag = false;
+    // z = 50;  // This should cause a compile error
+    
+    return x;
+}
