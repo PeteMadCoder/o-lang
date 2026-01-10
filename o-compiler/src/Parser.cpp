@@ -15,9 +15,25 @@ static std::map<char, int> BinopPrecedence = {
     {'%', 40}
 };
 
-Parser::Parser(Lexer& lex, CompilerDriver& drv) : lexer(lex), driver(drv) {
+Parser::Parser(Lexer& lex, CompilerDriver& drv) : lexer(lex), driver(drv), currentFileDir(".") {
     getNextToken(); // Prime the pump
-    
+
+    // Verify initial safety state
+    assert(unsafeDepth == 0);
+    assert(!isInUnsafeContext());
+}
+
+Parser::Parser(Lexer& lex, CompilerDriver& drv, const std::string& currentFile) : lexer(lex), driver(drv) {
+    // Extract directory from current file path
+    size_t lastSlash = currentFile.find_last_of("/\\");
+    if (lastSlash != std::string::npos) {
+        currentFileDir = currentFile.substr(0, lastSlash);
+    } else {
+        currentFileDir = ".";  // Current directory if no slash found
+    }
+
+    getNextToken(); // Prime the pump
+
     // Verify initial safety state
     assert(unsafeDepth == 0);
     assert(!isInUnsafeContext());
@@ -1184,22 +1200,32 @@ std::vector<std::string> Parser::ParseGenericParams() {
 bool Parser::ParseImport() {
     if (curTok.type != TokenType::Import) return false;
     getNextToken(); // eat 'import'
-    
+
     if (curTok.type != TokenType::StringLit) {
         LogError("Expected string literal after 'import'");
         return false;
     }
-    
+
     std::string filename = curTok.text.substr(1, curTok.text.length() - 2); // Remove quotes
     getNextToken(); // eat string
-    
+
     if (curTok.type != TokenType::Semicolon) {
         LogError("Expected ';' after import");
         return false;
     }
     getNextToken(); // eat ';'
-    
-    driver.processFile(filename);
+
+    // Resolve relative path based on current file's directory
+    // Only do this if the imported filename is a simple filename (no directory separators)
+    // and the current file is in a subdirectory
+    std::string resolvedFilename = filename;
+    if (currentFileDir != "." && filename.find('/') == std::string::npos && filename.find('\\') == std::string::npos) {
+        // If the imported filename has no directory separators and the current file is in a subdirectory,
+        // resolve it relative to the current file's directory
+        resolvedFilename = currentFileDir + "/" + filename;
+    }
+
+    driver.processFile(resolvedFilename);
     return true;
 }
 

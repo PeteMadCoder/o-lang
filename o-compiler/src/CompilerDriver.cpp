@@ -92,15 +92,15 @@ void CompilerDriver::processFile(const std::string& filename) {
 
     // 4. Parse
     Lexer lexer(source_code);
-    Parser parser(lexer, *this);
+    Parser parser(lexer, *this, path);
 
     while (!parser.isEOF()) {
         if (!parser.ParseTopLevel()) {
             std::cerr << "Error: Parsing failed in '" << path << "'\n";
-            // Don't abort the whole process, just stop parsing this file? 
+            // Don't abort the whole process, just stop parsing this file?
             // Or maybe we should exit(1) in Parser::LogError?
             // For now, continue to see other errors.
-            return; 
+            return;
         }
     }
 }

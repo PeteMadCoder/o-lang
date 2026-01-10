@@ -12,9 +12,11 @@ class Parser {
     CompilerDriver& driver;
     Token curTok;
     int unsafeDepth = 0; // Track unsafe block nesting depth
+    std::string currentFileDir; // Track current file's directory for relative imports
 
 public:
     Parser(Lexer& lex, CompilerDriver& drv);
+    Parser(Lexer& lex, CompilerDriver& drv, const std::string& currentFile);
 
     // Advance to the next token
     void getNextToken();

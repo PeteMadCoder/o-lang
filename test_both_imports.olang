@@ -1,0 +1,1 @@
+import "std/io.olang"; import "std/string.olang"; fn main() -> int { return 0; }
