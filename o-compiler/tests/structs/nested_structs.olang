@@ -1,0 +1,30 @@
+struct Point {
+    x: int;
+    y: int;
+    
+    new(x: int, y: int) {
+        this.x = x;
+        this.y = y;
+    }
+}
+
+struct Rectangle {
+    top_left: Point;
+    bottom_right: Point;
+    
+    new(x1: int, y1: int, x2: int, y2: int) {
+        this.top_left = new Point(x1, y1);
+        this.bottom_right = new Point(x2, y2);
+    }
+    
+    fn area() -> int {
+        var width = this.bottom_right.x - this.top_left.x;
+        var height = this.bottom_right.y - this.top_left.y;
+        return width * height;
+    }
+}
+
+fn main() -> int {
+    var rect = new Rectangle(0, 0, 5, 3);
+    return rect.area();
+}

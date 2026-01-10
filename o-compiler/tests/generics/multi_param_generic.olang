@@ -1,0 +1,23 @@
+struct Pair<T, U> {
+    first: T;
+    second: U;
+    
+    new(first: T, second: U) {
+        this.first = first;
+        this.second = second;
+    }
+    
+    fn get_first() -> T {
+        return this.first;
+    }
+    
+    fn get_second() -> U {
+        return this.second;
+    }
+}
+
+fn main() -> int {
+    var pair = new Pair<int, int>(10, 20);
+    var result = pair.get_first() + pair.get_second();
+    return result;
+}

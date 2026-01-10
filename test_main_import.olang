@@ -1,6 +1,0 @@
-// Just test if we can import the string module directly
-import "std/string.olang";
-
-fn main() -> int {
-    return 0;
-}

@@ -1,8 +1,0 @@
-import "std/io.olang";
-import "string.olang";
-
-fn main() -> int {
-    var msg = new String("Hello, World!");
-    println(msg);
-    return 0;
-}

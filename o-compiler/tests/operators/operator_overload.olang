@@ -1,0 +1,23 @@
+struct Counter {
+    value: int;
+    
+    new(initial: int) {
+        this.value = initial;
+    }
+    
+    fn op_add(other: *Counter) -> *Counter {
+        var new_counter = new Counter(this.value + other.value);
+        return new_counter;
+    }
+    
+    fn get_value() -> int {
+        return this.value;
+    }
+}
+
+fn main() -> int {
+    var c1 = new Counter(5);
+    var c2 = new Counter(10);
+    var c3 = c1.op_add(c2);
+    return c3.get_value();
+}

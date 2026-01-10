@@ -1,0 +1,22 @@
+struct Point {
+    x: int;
+    y: int;
+    
+    new(x: int, y: int) {
+        this.x = x;
+        this.y = y;
+    }
+    
+    fn get_x() -> int {
+        return this.x;
+    }
+    
+    fn get_y() -> int {
+        return this.y;
+    }
+}
+
+fn main() -> int {
+    var p = new Point(3, 4);
+    return p.get_x() + p.get_y();
+}

@@ -180,7 +180,7 @@ std::string mangleGenericName(const std::string& baseName, const std::vector<OTy
     for (const auto& arg : args) {
         name += "_";
         for (int i=0; i<arg.pointerDepth; ++i) name += "ptr_"; // Add ptr prefix
-        
+
         if (arg.base == BaseType::Int) name += "int";
         else if (arg.base == BaseType::Float) name += "float";
         else if (arg.base == BaseType::Bool) name += "bool";
@@ -194,18 +194,35 @@ std::string mangleGenericName(const std::string& baseName, const std::vector<OTy
     return name;
 }
 
+// Track ongoing instantiations to prevent infinite recursion
+static std::set<std::string> InProgressInstantiations;
+
 llvm::Type* instantiateStruct(const std::string& genericName, const std::vector<OType>& typeArgs) {
     if (GenericStructRegistry.count(genericName) == 0) return nullptr;
 
     std::string mangledName = mangleGenericName(genericName, typeArgs);
+
+    // Check if we're already in the process of instantiating this type
+    if (InProgressInstantiations.count(mangledName)) {
+        std::cerr << "Warning: Recursive instantiation detected for " << mangledName << ", returning existing type if available\n";
+        if (StructTypes.count(mangledName)) {
+            return StructTypes[mangledName];
+        }
+        return nullptr;
+    }
+
     if (StructTypes.count(mangledName)) {
         // Already instantiated, return the existing type
         return StructTypes[mangledName];
     }
 
+    // Mark this instantiation as in-progress
+    InProgressInstantiations.insert(mangledName);
+
     const auto& genericAST = GenericStructRegistry[genericName];
     if (genericAST->getGenericParams().size() != typeArgs.size()) {
         LogError(("Incorrect number of type arguments for " + genericName).c_str());
+        InProgressInstantiations.erase(mangledName);
         return nullptr;
     }
 
@@ -228,8 +245,10 @@ llvm::Type* instantiateStruct(const std::string& genericName, const std::vector<
         if (!fieldType) {
             // If we can't get the LLVM type, try instantiating dependent generic types first
             if (field.second.base == BaseType::Struct && !field.second.genericArgs.empty()) {
-                instantiateStruct(field.second.structName, field.second.genericArgs);
-                fieldType = getLLVMType(field.second);
+                llvm::Type* depType = instantiateStruct(field.second.structName, field.second.genericArgs);
+                if (depType) {
+                    fieldType = getLLVMType(field.second);
+                }
             }
             if (!fieldType) continue; // Error
         }
@@ -256,6 +275,7 @@ llvm::Type* instantiateStruct(const std::string& genericName, const std::vector<
     const llvm::StructLayout *Layout = TheModule->getDataLayout().getStructLayout(structType);
     if (!Layout) {
         fprintf(stderr, "Error: Failed to get layout for struct\n");
+        InProgressInstantiations.erase(mangledName);
         return nullptr;
     }
 
@@ -349,6 +369,9 @@ llvm::Type* instantiateStruct(const std::string& genericName, const std::vector<
 
     // QUEUE FOR LATER (Add to the instantiation queue for deferred body generation)
     InstantiationQueue.push_back({std::move(newAST), mangledName});
+
+    // Remove from in-progress set
+    InProgressInstantiations.erase(mangledName);
 
     return structType;
 }
@@ -1239,8 +1262,20 @@ llvm::Value *MethodCallExprAST::codegen() {
         llvm::Value* Zero = llvm::ConstantInt::get(llvm::Type::getInt32Ty(*TheContext), 0);
 
         // __vptr is at index 0
+        // Safety check: ensure the struct type exists in StructTypes
+        if (StructTypes.find(StructName) == StructTypes.end()) {
+            LogError(("Struct type not found in StructTypes map for vtable access: " + StructName).c_str());
+            return nullptr;
+        }
+
+        llvm::Type* structType = StructTypes[StructName];
+        if (!structType || !structType->isStructTy()) {
+            LogError(("Invalid struct type for vtable access: " + StructName).c_str());
+            return nullptr;
+        }
+
         llvm::Value* vptrAddr = Builder->CreateInBoundsGEP(
-             StructTypes[StructName],
+             structType,
              ThisPtr,
              {Zero, Zero},
              "vptr_addr"
@@ -2057,28 +2092,59 @@ llvm::Value *NewExprAST::codegen() {
     }
 
     // Debug
-    std::cerr << "Looking for constructor: " << MangledName << "\n";
+    std::cerr << "Looking for constructor: " << MangledName << " (base: " << ConstructorName << ")\n";
+    std::cerr << "LookupName: " << LookupName << ", Args count: " << Args.size() << "\n";
 
     llvm::Function *Constructor = TheModule->getFunction(MangledName);
+    std::cerr << "Found constructor via mangled name: " << (Constructor ? "YES" : "NO") << "\n";
 
     // Fallback to base name if mangled not found (backward compatibility or void args)
     if (!Constructor) {
         Constructor = TheModule->getFunction(ConstructorName);
+        std::cerr << "Found constructor via base name: " << (Constructor ? "YES" : "NO") << "\n";
     }
 
     // Try to look up in global registry if still not found
     if (!Constructor) {
         Constructor = GetFunctionFromPrototype(MangledName);
+        std::cerr << "Found constructor via global registry (mangled): " << (Constructor ? "YES" : "NO") << "\n";
     }
 
     // Also try base name in global registry
     if (!Constructor) {
         Constructor = GetFunctionFromPrototype(ConstructorName);
+        std::cerr << "Found constructor via global registry (base): " << (Constructor ? "YES" : "NO") << "\n";
     }
+
+    // CRITICAL FIX: If constructor is still not found, check if we need to force instantiation
+    // This is especially important when called from within struct methods during instantiation
+    if (!Constructor) {
+        std::cerr << "Constructor not found, checking for forced instantiation...\n";
+        // If this is a generic struct that should have been instantiated but wasn't,
+        // try to instantiate it now and look again
+        if (!GenericArgs.empty() && GenericStructRegistry.count(ClassName) > 0) {
+            std::cerr << "Attempting forced instantiation of generic struct: " << ClassName << "\n";
+            // Force instantiation of the struct and its constructors
+            llvm::Type* instantiatedType = instantiateStruct(ClassName, GenericArgs);
+            std::cerr << "Instantiation result: " << (instantiatedType ? "SUCCESS" : "FAILED") << "\n";
+
+            // Look again for the constructor after instantiation
+            Constructor = TheModule->getFunction(MangledName);
+            std::cerr << "After instantiation - Found constructor via mangled name: " << (Constructor ? "YES" : "NO") << "\n";
+            if (!Constructor) {
+                Constructor = TheModule->getFunction(ConstructorName);
+                std::cerr << "After instantiation - Found constructor via base name: " << (Constructor ? "YES" : "NO") << "\n";
+            }
+        } else if (!GenericArgs.empty()) {
+            std::cerr << "Generic args provided but struct not found in GenericStructRegistry\n";
+        }
+    }
+
+    std::cerr << "Final constructor result: " << (Constructor ? "FOUND" : "NOT FOUND") << "\n";
 
     if (Constructor) {
         // Additional safety check for constructor
-        if (!Constructor->getFunctionType()) {
+        if (!Constructor || !Constructor->getFunctionType()) {
             LogError(("Invalid constructor function type for " + LookupName).c_str());
             return nullptr;
         }
@@ -2095,6 +2161,11 @@ llvm::Value *NewExprAST::codegen() {
         }
 
         // Safety check for arguments
+        if (!Constructor) {  // Double-check constructor validity before accessing
+            LogError(("Constructor became invalid after argument processing for " + LookupName).c_str());
+            return nullptr;
+        }
+
         if (CallArgs.size() != Constructor->arg_size()) {
             LogError(("Argument count mismatch for constructor " + LookupName + ": expected " +
                      std::to_string(Constructor->arg_size()) + ", got " + std::to_string(CallArgs.size())).c_str());
@@ -2118,6 +2189,12 @@ llvm::Value *NewExprAST::codegen() {
         // Make sure the function is valid
         if (!Constructor || !Constructor->getFunctionType()) {
             LogError(("Invalid constructor function for " + LookupName).c_str());
+            return nullptr;
+        }
+
+        // Final safety check before calling
+        if (!Constructor || !Constructor->getFunctionType()) {
+            LogError(("Constructor function became invalid before call for " + LookupName).c_str());
             return nullptr;
         }
 
@@ -2819,9 +2896,21 @@ llvm::Value *MemberAccessAST::codegenAddress() {
     // 3. Generate GEP
     llvm::Value *Zero = llvm::ConstantInt::get(llvm::Type::getInt32Ty(*TheContext), 0);
     llvm::Value *Idx = llvm::ConstantInt::get(llvm::Type::getInt32Ty(*TheContext), FieldIndex);
-    
+
+    // Safety check: ensure the struct type exists in StructTypes
+    if (StructTypes.find(StructName) == StructTypes.end()) {
+        LogError(("Struct type not found in StructTypes map: " + StructName).c_str());
+        return nullptr;
+    }
+
+    llvm::Type* structType = StructTypes[StructName];
+    if (!structType || !structType->isStructTy()) {
+        LogError(("Invalid struct type for: " + StructName).c_str());
+        return nullptr;
+    }
+
     return Builder->CreateInBoundsGEP(
-        StructTypes[StructName],
+        structType,
         ObjPtr,
         {Zero, Idx},
         "fieldaddr"

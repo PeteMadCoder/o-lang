@@ -1,1 +1,0 @@
-struct SimpleStruct { int x; new(int val) { this.x = val; } } fn main() { var s = new SimpleStruct(42); return; }

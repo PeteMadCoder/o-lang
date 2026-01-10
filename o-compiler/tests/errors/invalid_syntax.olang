@@ -1,0 +1,4 @@
+fn main() -> int {
+    var x = ;  // Invalid syntax
+    return x;
+}

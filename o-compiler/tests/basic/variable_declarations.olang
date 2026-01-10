@@ -1,0 +1,6 @@
+fn main() -> int {
+    var x = 5;
+    var y: int = 10;
+    let immutable_x: int = 20;
+    return x + y;
+}

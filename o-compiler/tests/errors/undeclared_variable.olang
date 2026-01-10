@@ -1,0 +1,3 @@
+fn main() -> int {
+    return undeclared_variable;  // Undeclared variable
+}

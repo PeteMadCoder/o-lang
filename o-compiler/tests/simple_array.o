@@ -1,4 +1,0 @@
-fn main() -> int {
-    var nums = {5};
-    return nums[0];
-}

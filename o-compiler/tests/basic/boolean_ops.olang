@@ -1,0 +1,9 @@
+fn main() -> int {
+    var a = true;
+    var b = false;
+    var c = a && b || true;
+    if (c) {
+        return 1;
+    }
+    return 0;
+}

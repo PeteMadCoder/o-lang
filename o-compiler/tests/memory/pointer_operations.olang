@@ -1,0 +1,6 @@
+fn main() -> int {
+    var x = 42;
+    var ptr = &x;
+    var deref = *ptr;
+    return deref;
+}

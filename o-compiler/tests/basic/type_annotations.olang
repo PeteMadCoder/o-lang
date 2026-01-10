@@ -1,0 +1,7 @@
+fn main() -> int {
+    var a: int = 42;
+    var b: float = 3.14;
+    var c: bool = true;
+    var d: char = 'A';
+    return a;
+}

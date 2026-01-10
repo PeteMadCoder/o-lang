@@ -1,8 +1,0 @@
-fn testPointers(int x, *int ptr, **float ptrptr) -> *int {
-    var y = 42;
-    return ptr;
-}
-
-fn main() -> int {
-    return 0;
-}
