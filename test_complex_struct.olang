@@ -1,0 +1,76 @@
+// Define a complex struct with multiple fields and methods
+struct ComplexStruct {
+    int x;
+    float y;
+    char z;
+    bool flag;
+    
+    new(int x_val, float y_val, char z_val, bool flag_val) {
+        this.x = x_val;
+        this.y = y_val;
+        this.z = z_val;
+        this.flag = flag_val;
+    }
+    
+    fn update_x(int new_x) {
+        this.x = new_x;
+    }
+    
+    fn get_x() -> int {
+        return this.x;
+    }
+    
+    fn toggle_flag() {
+        this.flag = !this.flag;
+    }
+    
+    fn is_active() -> bool {
+        return this.flag;
+    }
+}
+
+// Nested struct
+struct Container {
+    ComplexStruct inner;
+    int count;
+    
+    new(ComplexStruct inner_val, int count_val) {
+        this.inner = inner_val;
+        this.count = count_val;
+    }
+    
+    fn increment_count() {
+        this.count = this.count + 1;
+    }
+    
+    fn get_inner_x() -> int {
+        return this.inner.get_x();
+    }
+}
+
+fn main() {
+    // Create complex struct instances
+    var cs1 = new ComplexStruct(10, 3.14, 'A', true);
+    var cs2 = new ComplexStruct(20, 2.71, 'B', false);
+    
+    // Test method calls
+    var x1 = cs1.get_x();
+    var active1 = cs1.is_active();
+    
+    cs1.update_x(100);
+    cs1.toggle_flag();
+    
+    // Test nested struct
+    var container = new Container(cs1, 5);
+    
+    var inner_x = container.get_inner_x();
+    var count = container.count;
+    
+    container.increment_count();
+    
+    // Test multiple operations
+    var temp = container.inner;
+    var temp_x = temp.get_x();
+    
+    return;
+}

@@ -1,0 +1,18 @@
+import "stdlib/std/string.olang";
+
+fn main() {
+    var s = new String("Hello, World!");
+    var s2 = new String(10);  // Empty string with capacity
+    
+    // Test string operations
+    var len = s.length;
+    var cap = s.capacity;
+    
+    // Test appending
+    s2.append(s);
+    
+    // Test accessing buffer
+    var buf = s.c_str();
+    
+    return;
+}

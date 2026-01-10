@@ -46,6 +46,12 @@ llvm::Function *GetFunctionFromPrototype(std::string Name) {
         // But be very careful here to avoid segfaults
         auto protoSharedPtr = it->second;
 
+        // Check if the shared pointer is valid before dereferencing
+        if (!protoSharedPtr) {
+            fprintf(stderr, "Error: Null prototype found for function: %s\n", Name.c_str());
+            return nullptr;
+        }
+
         // Generate code for the function
         return protoSharedPtr->codegen();
     }
@@ -177,6 +183,10 @@ void instantiateStruct(const std::string& genericName, const std::vector<OType>&
 
     std::string mangledName = mangleGenericName(genericName, typeArgs);
     if (StructTypes.count(mangledName)) return; // Already instantiated
+    // The genericAST is a reference, so we can't check if it's null.
+    // Instead, we check if the registry contains the key earlier in the function.
+    // Since we already checked GenericStructRegistry.count(genericName) at the beginning,
+    // we know it exists, so no additional check is needed here.
 
     const auto& genericAST = GenericStructRegistry[genericName];
     if (genericAST->getGenericParams().size() != typeArgs.size()) {
@@ -246,6 +256,10 @@ void instantiateStruct(const std::string& genericName, const std::vector<OType>&
 
     // Get Layout for accurate offsets and size
     const llvm::StructLayout *Layout = TheModule->getDataLayout().getStructLayout(structType);
+    if (!Layout) {
+        fprintf(stderr, "Error: Failed to get layout for struct\n");
+        return;
+    }
 
     // Update field offsets
     for(size_t i = 0; i < fieldInfos.size(); ++i) {
@@ -450,32 +464,10 @@ void instantiateStruct(const std::string& genericName, const std::vector<OType>&
     // Remove the temporary function we created for context
     TempFunc->eraseFromParent();
 
-    // Restore original insertion point
-    if (SavedInsertBlock) {
-        // Make sure the original basic block still exists in its function
-        llvm::Function *ParentFunc = SavedInsertBlock->getParent();
-        if (ParentFunc && !ParentFunc->empty()) {
-            // Find the block in the function (it might have moved)
-            bool found = false;
-            for (auto &BB : *ParentFunc) {
-                if (&BB == SavedInsertBlock) {
-                    Builder->SetInsertPoint(&BB);
-                    found = true;
-                    break;
-                }
-            }
-            // If the original block was not found, set to the entry block
-            if (!found) {
-                Builder->SetInsertPoint(&ParentFunc->getEntryBlock());
-            }
-        } else if (ParentFunc) {
-            // If parent function exists but block doesn't, use entry block
-            Builder->SetInsertPoint(&ParentFunc->getEntryBlock());
-        }
-    } else {
-        // If there was no original insertion point, clear it again
-        Builder->ClearInsertionPoint();
-    }
+    // Restore original insertion point - but be careful about dangling pointers
+    // The SavedInsertBlock might have been deleted during the instantiation process
+    // So we'll just clear the insertion point to be safe
+    Builder->ClearInsertionPoint();
 }
 
 // Helper to translate OType to llvm::Type
@@ -937,6 +929,11 @@ llvm::Value *CallExprAST::codegen() {
         return nullptr;
     }
     // -------------------------------
+    // Additional null check for function
+    if (!CalleeF || !CalleeF->getFunctionType()) {
+        LogError(("Invalid function or function type for: " + Callee).c_str());
+        return nullptr;
+    }
 
     if (CalleeF->arg_size() != Args.size()) {
         LogError("Incorrect # arguments passed");
@@ -1042,6 +1039,12 @@ llvm::Value *MethodCallExprAST::codegen() {
     std::string MangledName = StructName + "_" + MethodName;
     llvm::Function *CalleeF = TheModule->getFunction(MangledName);
 
+    // Additional safety check for function
+    if (!CalleeF || !CalleeF->getFunctionType()) {
+        std::string err = "Invalid method function: " + MangledName;
+        LogError(err.c_str());
+        return nullptr;
+    }
     // If function not found, try to look it up in the global registry
     if (!CalleeF) {
         CalleeF = GetFunctionFromPrototype(MangledName);
@@ -1540,6 +1543,10 @@ void StructDeclAST::codegen() {
     
     // Get Layout for accurate offsets and size
     const llvm::StructLayout *Layout = TheModule->getDataLayout().getStructLayout(structType);
+    if (!Layout) {
+        LogError(("Failed to get layout for struct: " + Name).c_str());
+        return;
+    }
     
     // Update field offsets
     for(size_t i = 0; i < fieldInfos.size(); ++i) {
@@ -1892,11 +1899,18 @@ llvm::Value *DerefExprAST::codegenAddress() {
 llvm::Value *NewExprAST::codegen() {
     std::string LookupName = ClassName;
 
-    // Handle Generics
+    // Handle Generics - only instantiate if the struct is actually generic
     if (!GenericArgs.empty()) {
-        // Trigger instantiation
-        instantiateStruct(ClassName, GenericArgs);
-        LookupName = mangleGenericName(ClassName, GenericArgs);
+        // Check if this is a generic struct first
+        if (GenericStructRegistry.count(ClassName) > 0) {
+            // Trigger instantiation
+            instantiateStruct(ClassName, GenericArgs);
+            LookupName = mangleGenericName(ClassName, GenericArgs);
+        } else {
+            // If not a generic struct but has generic args, this is an error
+            LogError(("Trying to instantiate non-generic struct with generic arguments: " + ClassName).c_str());
+            return nullptr;
+        }
     }
 
     // Check if the class/struct exists
@@ -1906,6 +1920,12 @@ llvm::Value *NewExprAST::codegen() {
     }
 
     llvm::StructType *StructType = StructTypes[LookupName];
+
+    // Check if StructType is valid
+    if (!StructType) {
+        LogError(("Invalid struct type for: " + LookupName).c_str());
+        return nullptr;
+    }
 
     // 1. Heap Allocation (malloc)
     llvm::Function *MallocF = TheModule->getFunction("malloc");
@@ -1965,6 +1985,12 @@ llvm::Value *NewExprAST::codegen() {
     }
 
     if (Constructor) {
+        // Additional safety check for constructor
+        if (!Constructor->getFunctionType()) {
+            LogError(("Invalid constructor function type for " + LookupName).c_str());
+            return nullptr;
+        }
+
         // Prepare arguments: this pointer + user arguments
         std::vector<llvm::Value*> CallArgs;
         CallArgs.push_back(ObjPtr); // 'this' pointer
@@ -1974,6 +2000,33 @@ llvm::Value *NewExprAST::codegen() {
             llvm::Value *ArgVal = Arg->codegen();
             if (!ArgVal) return nullptr;
             CallArgs.push_back(ArgVal);
+        }
+
+        // Safety check for arguments
+        if (CallArgs.size() != Constructor->arg_size()) {
+            LogError(("Argument count mismatch for constructor " + LookupName + ": expected " +
+                     std::to_string(Constructor->arg_size()) + ", got " + std::to_string(CallArgs.size())).c_str());
+            return nullptr;
+        }
+
+        // Call constructor - add safety checks
+        if (!Builder->GetInsertBlock()) {
+            LogError(("Cannot call constructor: no insertion point available for " + LookupName).c_str());
+            return nullptr;
+        }
+
+        // Make sure all arguments are valid
+        for (size_t i = 0; i < CallArgs.size(); ++i) {
+            if (!CallArgs[i]) {
+                LogError(("Invalid argument at index " + std::to_string(i) + " for constructor " + LookupName).c_str());
+                return nullptr;
+            }
+        }
+
+        // Make sure the function is valid
+        if (!Constructor || !Constructor->getFunctionType()) {
+            LogError(("Invalid constructor function for " + LookupName).c_str());
+            return nullptr;
         }
 
         // Call constructor
