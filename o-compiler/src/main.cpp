@@ -20,6 +20,9 @@ extern std::unique_ptr<llvm::Module> TheModule;
 
 #include "CompilerDriver.h"
 
+// Forward declaration for deferred instantiation processing
+void processDeferredInstantiations();
+
 namespace cl = llvm::cl;
 
 // Command Line Options
@@ -54,6 +57,10 @@ int main(int argc, char** argv) {
 
     // 3. Process File
     driver.processFile(InputFilename);
+
+    // 4. FLUSH GENERICS (Generate bodies of all instantiated generics)
+    // Now that main is done, generate all the Vector<int> bodies we queued up.
+    processDeferredInstantiations();
 
     // 5. Target Setup
     auto TargetTriple = llvm::sys::getDefaultTargetTriple();

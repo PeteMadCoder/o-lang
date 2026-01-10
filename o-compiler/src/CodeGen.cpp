@@ -23,6 +23,14 @@ std::map<std::string, std::unique_ptr<StructDeclAST>> GenericStructRegistry;
 // Global registry for function prototypes to enable lazy symbol resolution during generic instantiation
 std::map<std::string, std::shared_ptr<PrototypeAST>> GlobalFunctionProtos;
 
+// Deferred Instantiation Queue
+struct PendingInstantiation {
+    std::unique_ptr<StructDeclAST> AST;
+    std::string MangledName;
+};
+
+static std::vector<PendingInstantiation> InstantiationQueue;
+
 // Forward declaration for helper functions
 llvm::AllocaInst *CreateEntryBlockAlloca(llvm::Function *TheFunction,
                                    const std::string &VarName, llvm::Type* Type);
@@ -178,20 +186,19 @@ std::string mangleGenericName(const std::string& baseName, const std::vector<OTy
     return name;
 }
 
-void instantiateStruct(const std::string& genericName, const std::vector<OType>& typeArgs) {
-    if (GenericStructRegistry.count(genericName) == 0) return;
+llvm::Type* instantiateStruct(const std::string& genericName, const std::vector<OType>& typeArgs) {
+    if (GenericStructRegistry.count(genericName) == 0) return nullptr;
 
     std::string mangledName = mangleGenericName(genericName, typeArgs);
-    if (StructTypes.count(mangledName)) return; // Already instantiated
-    // The genericAST is a reference, so we can't check if it's null.
-    // Instead, we check if the registry contains the key earlier in the function.
-    // Since we already checked GenericStructRegistry.count(genericName) at the beginning,
-    // we know it exists, so no additional check is needed here.
+    if (StructTypes.count(mangledName)) {
+        // Already instantiated, return the existing type
+        return StructTypes[mangledName];
+    }
 
     const auto& genericAST = GenericStructRegistry[genericName];
     if (genericAST->getGenericParams().size() != typeArgs.size()) {
         LogError(("Incorrect number of type arguments for " + genericName).c_str());
-        return;
+        return nullptr;
     }
 
     std::map<std::string, OType> typeMap;
@@ -203,24 +210,7 @@ void instantiateStruct(const std::string& genericName, const std::vector<OType>&
     newAST->setName(mangledName);
     newAST->makeConcrete();
 
-    // Save Context (Builder and Scope)
-    llvm::BasicBlock *SavedInsertBlock = Builder->GetInsertBlock();
-    auto SavedScopeStack = ScopeStack;
-
-    // For generic instantiation, we need to ensure there's a valid insertion point
-    // Create a temporary function to serve as context for the instantiation
-    llvm::FunctionType *tempFuncType = llvm::FunctionType::get(
-        llvm::Type::getVoidTy(*TheContext), std::vector<llvm::Type*>(), false);
-    llvm::Function *TempFunc = llvm::Function::Create(
-        tempFuncType, llvm::Function::InternalLinkage, "instantiation_context", TheModule.get());
-    llvm::BasicBlock *TempBB = llvm::BasicBlock::Create(*TheContext, "entry", TempFunc);
-    Builder->SetInsertPoint(TempBB);
-
-    // Clear scope stack to avoid conflicts during instantiation
-    ScopeStack.clear();
-
-    // Perform the codegen for the new instantiated struct
-    // Generate the struct type and register it
+    // GENERATE TYPE LAYOUT (We need the llvm::StructType immediately)
     std::vector<llvm::Type*> fieldTypes;
     std::vector<FieldInfo> fieldInfos;
 
@@ -258,7 +248,7 @@ void instantiateStruct(const std::string& genericName, const std::vector<OType>&
     const llvm::StructLayout *Layout = TheModule->getDataLayout().getStructLayout(structType);
     if (!Layout) {
         fprintf(stderr, "Error: Failed to get layout for struct\n");
-        return;
+        return nullptr;
     }
 
     // Update field offsets
@@ -269,7 +259,8 @@ void instantiateStruct(const std::string& genericName, const std::vector<OType>&
     // Register in type registry with correct size
     TypeRegistry::getInstance().registerStruct(mangledName, fieldInfos, Layout->getSizeInBytes());
 
-    // Generate prototypes and bodies for methods of the instantiated struct
+    // GENERATE PROTOTYPES (Declarations only, no bodies)
+    // Generate prototypes for methods of the instantiated struct
     for (auto& method : newAST->getMethods()) {
         // Mangle method name: StructName_methodName
         std::string originalName = method->getPrototype()->getName();
@@ -282,66 +273,16 @@ void instantiateStruct(const std::string& genericName, const std::vector<OType>&
         // Inject 'this' parameter as first argument with the instantiated struct type
         clonedProto->injectThisParameter(mangledName);
 
-        // Generate the function declaration
+        // Generate the function declaration (prototype only)
         llvm::Function *TheFunction = clonedProto->codegen();
         if (!TheFunction) continue;
 
-        // --- FIX: REGISTER INSTANTIATED NAME ---
-        // If this is a generic instantiation (e.g., Vector_int_push),
-        // the rest of the compiler needs to know this symbol exists.
+        // Register the prototype in the global registry
         std::string MangledName = clonedProto->getName();
         RegisterFunctionProto(std::move(clonedProto)); // Register in Global Map
-        // ---------------------------------------
-
-        // Create a basic block for the method body
-        llvm::BasicBlock *MethodBlock = llvm::BasicBlock::Create(*TheContext, "entry", TheFunction);
-        Builder->SetInsertPoint(MethodBlock);
-
-        // Process the method body with proper variable setup
-        ScopeStack.clear();
-        EnterScope(); // Function Scope
-
-        // Register types from prototype
-        const auto& ProtoArgs = clonedProto->getArgs();
-        for (const auto& ArgPair : ProtoArgs) {
-            AddVariableType(ArgPair.first, ArgPair.second);
-        }
-
-        // Set up arguments in the function
-        for (auto &Arg : TheFunction->args()) {
-            llvm::AllocaInst *Alloca = CreateEntryBlockAlloca(TheFunction, std::string(Arg.getName()), Arg.getType());
-            Builder->CreateStore(&Arg, Alloca);
-            AddVariable(std::string(Arg.getName()), Alloca);
-        }
-
-        // Generate the method body
-        llvm::Value *RetVal = nullptr;
-        if (method->getBody()) {
-            RetVal = method->getBody()->codegen();
-        }
-
-        // Add return instruction if block is not terminated
-        if (!Builder->GetInsertBlock()->getTerminator()) {
-            if (clonedProto->getReturnType().base == BaseType::Void) {
-                Builder->CreateRetVoid();
-            } else {
-                // For non-void functions, return a default value
-                llvm::Type *retType = getLLVMType(clonedProto->getReturnType());
-                if (retType->isIntegerTy()) {
-                    Builder->CreateRet(llvm::ConstantInt::get(retType, 0));
-                } else if (retType->isDoubleTy()) {
-                    Builder->CreateRet(llvm::ConstantFP::get(*TheContext, llvm::APFloat(0.0)));
-                } else {
-                    Builder->CreateRet(llvm::UndefValue::get(retType));
-                }
-            }
-        }
-
-        // Verify the function
-        llvm::verifyFunction(*TheFunction);
     }
 
-    // Generate prototypes and bodies for constructors of the instantiated struct
+    // Generate prototypes for constructors of the instantiated struct
     for (auto& constructor : newAST->getConstructors()) {
         // Create constructor function name: StructName_new[_ArgType...]
         std::string funcName = mangledName + "_new";
@@ -384,8 +325,7 @@ void instantiateStruct(const std::string& genericName, const std::vector<OType>&
             func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, funcName, TheModule.get());
         }
 
-        // --- FIX: REGISTER INSTANTIATED CONSTRUCTOR NAME ---
-        // Create a prototype for the constructor and register it in the global registry
+        // Register the constructor prototype
         std::vector<std::pair<std::string, OType>> args;
         for (size_t i = 0; i < paramNames.size(); ++i) {
             OType argType = paramTypes[i]->isPointerTy() ?
@@ -397,112 +337,198 @@ void instantiateStruct(const std::string& genericName, const std::vector<OType>&
         // Create a temporary prototype just for registration purposes
         auto tempProto = std::make_unique<PrototypeAST>(funcName, args, OType(BaseType::Void));
         RegisterFunctionProto(std::move(tempProto)); // Register in Global Map
-        // ---------------------------------------
+    }
 
-        // Create basic block
-        llvm::BasicBlock* BB = llvm::BasicBlock::Create(*TheContext, "entry", func);
-        Builder->SetInsertPoint(BB);
+    // QUEUE FOR LATER (Add to the instantiation queue for deferred body generation)
+    InstantiationQueue.push_back({std::move(newAST), mangledName});
 
-        EnterScope();
+    return structType;
+}
 
-        // Handle Arguments
-        auto argIt = func->arg_begin();
-        for (size_t i = 0; i < paramNames.size(); ++i, ++argIt) {
-            argIt->setName(paramNames[i]);
+void processDeferredInstantiations() {
+    // Loop index used because the queue might grow while processing!
+    // (e.g., Vector<int> might trigger instantiation of Option<int>)
+    for (size_t i = 0; i < InstantiationQueue.size(); ++i) {
+        auto& Item = InstantiationQueue[i];
 
-            if (paramNames[i] == "this") {
-                // Store 'this' pointer in an alloca so we can access it via load/store
-                llvm::AllocaInst* alloca = CreateEntryBlockAlloca(func, "this", argIt->getType());
-                Builder->CreateStore(&*argIt, alloca);
+        // 1. CLEAN SLATE
+        // We are at the top level. No 'Save/Restore' needed.
+        Builder->ClearInsertionPoint();
 
-                AddVariable("this", alloca);
-                AddVariableType("this", OType(BaseType::Struct, 1, mangledName));
-            } else {
-                // User arguments
-                llvm::AllocaInst* alloca = CreateEntryBlockAlloca(func, paramNames[i], argIt->getType());
-                Builder->CreateStore(&*argIt, alloca);
+        // 2. GENERATE BODIES
+        // Generate bodies for methods of the instantiated struct
+        for (auto& method : Item.AST->getMethods()) {
+            std::string originalName = method->getPrototype()->getName();
+            std::string mangledName = Item.MangledName + "_" + originalName;
 
-                AddVariable(paramNames[i], alloca);
+            llvm::Function *TheFunction = TheModule->getFunction(mangledName);
+            if (!TheFunction) continue;
+
+            // Create BasicBlock and set builder
+            llvm::BasicBlock *MethodBlock = llvm::BasicBlock::Create(*TheContext, "entry", TheFunction);
+            Builder->SetInsertPoint(MethodBlock);
+
+            // Process the method body with proper variable setup
+            // Clear scope stack for this function
+            std::vector<ScopeLayer> oldScopeStack = ScopeStack;
+            ScopeStack.clear();
+            EnterScope(); // Function Scope
+
+            // Register types from prototype
+            const auto& ProtoArgs = method->getPrototype()->getArgs();
+            for (const auto& ArgPair : ProtoArgs) {
+                AddVariableType(ArgPair.first, ArgPair.second);
             }
-        }
 
-        if (constructor->getBody()) {
-            constructor->getBody()->codegen();
-        }
+            // Set up arguments in the function
+            for (auto &Arg : TheFunction->args()) {
+                llvm::AllocaInst *Alloca = CreateEntryBlockAlloca(TheFunction, std::string(Arg.getName()), Arg.getType());
+                Builder->CreateStore(&Arg, Alloca);
+                AddVariable(std::string(Arg.getName()), Alloca);
+            }
 
-        // Initialize VTable Pointer if it exists
-        if (TypeRegistry::getInstance().hasStruct(mangledName)) {
-            const StructInfo& info = TypeRegistry::getInstance().getStruct(mangledName);
+            // Generate the method body
+            llvm::Value *RetVal = nullptr;
+            if (method->getBody()) {
+                RetVal = method->getBody()->codegen();
+            }
 
-            bool hasVptr = !info.fields.empty() && info.fields[0].name == "__vptr";
-
-            if (hasVptr) {
-                // Load 'this' pointer
-                llvm::AllocaInst* thisAlloca = GetVariable("this");
-                if (thisAlloca) {
-                    llvm::Value* thisPtr = Builder->CreateLoad(thisAlloca->getAllocatedType(), thisAlloca, "thisptr");
-
-                    // Get Global VTable
-                    std::string vtableName = mangledName + "_vtable";
-                    llvm::GlobalVariable* vtableVar = TheModule->getNamedGlobal(vtableName);
-
-                    if (vtableVar) {
-                        // Get address of __vptr field (index 0)
-                        std::vector<llvm::Value*> indices;
-                        indices.push_back(llvm::ConstantInt::get(llvm::Type::getInt32Ty(*TheContext), 0));
-                        indices.push_back(llvm::ConstantInt::get(llvm::Type::getInt32Ty(*TheContext), 0)); // Field 0
-
-                        llvm::Value* vptrAddr = Builder->CreateInBoundsGEP(
-                            StructTypes[mangledName],
-                            thisPtr,
-                            indices,
-                            "vptr_addr"
-                        );
-
-                        // Store VTable address
-                        // VTable var is [N x i8*]*. Decay to i8**.
-                         llvm::Value* Zero = llvm::ConstantInt::get(llvm::Type::getInt32Ty(*TheContext), 0);
-                         llvm::Value* vtablePtr = Builder->CreateInBoundsGEP(
-                             vtableVar->getValueType(),
-                             vtableVar,
-                             {Zero, Zero},
-                             "vtable_decay"
-                         );
-
-                         Builder->CreateStore(vtablePtr, vptrAddr);
+            // Add return instruction if block is not terminated
+            if (!Builder->GetInsertBlock()->getTerminator()) {
+                if (method->getPrototype()->getReturnType().base == BaseType::Void) {
+                    Builder->CreateRetVoid();
+                } else {
+                    // For non-void functions, return a default value
+                    llvm::Type *retType = getLLVMType(method->getPrototype()->getReturnType());
+                    if (retType->isIntegerTy()) {
+                        Builder->CreateRet(llvm::ConstantInt::get(retType, 0));
+                    } else if (retType->isDoubleTy()) {
+                        Builder->CreateRet(llvm::ConstantFP::get(*TheContext, llvm::APFloat(0.0)));
+                    } else {
+                        Builder->CreateRet(llvm::UndefValue::get(retType));
                     }
                 }
             }
+
+            // Restore scope stack
+            ScopeStack = oldScopeStack;
+
+            // Verify the function
+            llvm::verifyFunction(*TheFunction);
         }
 
-        Builder->CreateRetVoid();
+        // Generate bodies for constructors of the instantiated struct
+        for (auto& constructor : Item.AST->getConstructors()) {
+            // Create constructor function name: StructName_new[_ArgType...]
+            std::string funcName = Item.MangledName + "_new";
 
-        ExitScope();
-    }
+            // Mangle name if parameters exist (simple mangling)
+            std::vector<OType> paramOTypes;
+            for (const auto& param : constructor->getParams()) {
+                paramOTypes.push_back(param.second);
+            }
 
-    // Restore Context
-    ScopeStack = SavedScopeStack;
+            if (!paramOTypes.empty()) {
+                funcName = mangleGenericName(funcName, paramOTypes);
+            }
 
-    // --- FIX: ROBUST RESTORATION ---
-    // Don't erase the temporary function yet - we might need it for restoration
+            llvm::Function* func = TheModule->getFunction(funcName);
+            if (!func) continue;
 
-    if (SavedInsertBlock) {
-        // 1. Check if the block still has a parent function.
-        // If a block is detached, setting the insert point to it is undefined behavior.
-        if (SavedInsertBlock->getParent()) {
-            Builder->SetInsertPoint(SavedInsertBlock);
-        } else {
-            // The block we came from was deleted or corrupted.
-            // This is a critical state, but clearing is safer than crashing.
-            Builder->ClearInsertionPoint();
+            // Create basic block
+            llvm::BasicBlock* BB = llvm::BasicBlock::Create(*TheContext, "entry", func);
+            Builder->SetInsertPoint(BB);
+
+            // Save and clear scope
+            std::vector<ScopeLayer> oldScopeStack = ScopeStack;
+            ScopeStack.clear();
+            EnterScope();
+
+            // Handle Arguments
+            auto argIt = func->arg_begin();
+            std::vector<std::string> paramNames; // Recreate param names for this context
+            for (const auto& param : constructor->getParams()) {
+                paramNames.push_back(param.first);
+            }
+
+            for (size_t j = 0; j < paramNames.size(); ++j, ++argIt) {
+                std::string paramName = (j == 0) ? "this" : paramNames[j-1]; // First is 'this'
+                argIt->setName(paramName);
+
+                if (paramName == "this") {
+                    // Store 'this' pointer in an alloca so we can access it via load/store
+                    llvm::AllocaInst* alloca = CreateEntryBlockAlloca(func, "this", argIt->getType());
+                    Builder->CreateStore(&*argIt, alloca);
+
+                    AddVariable("this", alloca);
+                    AddVariableType("this", OType(BaseType::Struct, 1, Item.MangledName));
+                } else {
+                    // User arguments
+                    llvm::AllocaInst* alloca = CreateEntryBlockAlloca(func, paramName, argIt->getType());
+                    Builder->CreateStore(&*argIt, alloca);
+
+                    AddVariable(paramName, alloca);
+                }
+            }
+
+            if (constructor->getBody()) {
+                constructor->getBody()->codegen();
+            }
+
+            // Initialize VTable Pointer if it exists
+            if (TypeRegistry::getInstance().hasStruct(Item.MangledName)) {
+                const StructInfo& info = TypeRegistry::getInstance().getStruct(Item.MangledName);
+
+                bool hasVptr = !info.fields.empty() && info.fields[0].name == "__vptr";
+
+                if (hasVptr) {
+                    // Load 'this' pointer
+                    llvm::AllocaInst* thisAlloca = GetVariable("this");
+                    if (thisAlloca) {
+                        llvm::Value* thisPtr = Builder->CreateLoad(thisAlloca->getAllocatedType(), thisAlloca, "thisptr");
+
+                        // Get Global VTable
+                        std::string vtableName = Item.MangledName + "_vtable";
+                        llvm::GlobalVariable* vtableVar = TheModule->getNamedGlobal(vtableName);
+
+                        if (vtableVar) {
+                            // Get address of __vptr field (index 0)
+                            std::vector<llvm::Value*> indices;
+                            indices.push_back(llvm::ConstantInt::get(llvm::Type::getInt32Ty(*TheContext), 0));
+                            indices.push_back(llvm::ConstantInt::get(llvm::Type::getInt32Ty(*TheContext), 0)); // Field 0
+
+                            llvm::Value* vptrAddr = Builder->CreateInBoundsGEP(
+                                StructTypes[Item.MangledName],
+                                thisPtr,
+                                indices,
+                                "vptr_addr"
+                            );
+
+                            // Store VTable address
+                            // VTable var is [N x i8*]*. Decay to i8**.
+                             llvm::Value* Zero = llvm::ConstantInt::get(llvm::Type::getInt32Ty(*TheContext), 0);
+                             llvm::Value* vtablePtr = Builder->CreateInBoundsGEP(
+                                 vtableVar->getValueType(),
+                                 vtableVar,
+                                 {Zero, Zero},
+                                 "vtable_decay"
+                             );
+
+                             Builder->CreateStore(vtablePtr, vptrAddr);
+                        }
+                    }
+                }
+            }
+
+            Builder->CreateRetVoid();
+
+            // Restore scope
+            ScopeStack = oldScopeStack;
         }
-    } else {
-        Builder->ClearInsertionPoint();
     }
 
-    // Now it's safe to erase the temporary function
-    TempFunc->eraseFromParent();
-    // -------------------------------
+    // Clear queue after processing
+    InstantiationQueue.clear();
 }
 
 // Helper to translate OType to llvm::Type
@@ -1938,8 +1964,8 @@ llvm::Value *NewExprAST::codegen() {
     if (!GenericArgs.empty()) {
         // Check if this is a generic struct first
         if (GenericStructRegistry.count(ClassName) > 0) {
-            // Trigger instantiation
-            instantiateStruct(ClassName, GenericArgs);
+            // Trigger instantiation (type and prototypes only)
+            llvm::Type* instantiatedType = instantiateStruct(ClassName, GenericArgs);
             LookupName = mangleGenericName(ClassName, GenericArgs);
         } else {
             // If not a generic struct but has generic args, this is an error
