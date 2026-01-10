@@ -1,0 +1,59 @@
+// External C functions
+fn malloc(size: int) -> *byte;
+fn free(ptr: *byte);
+fn memcpy(dest: *byte, src: *byte, n: int) -> *void;
+
+struct ComplexString {
+    buffer: *byte;
+    length: int;
+    capacity: int;
+
+    // Constructor 1: Creates from char pointer
+    new(ptr: *char) {
+        this.length = 0;
+        this.capacity = 10;
+        unsafe {
+            this.buffer = malloc(this.capacity);
+        }
+    }
+
+    // Constructor 2: Creates with capacity
+    new(cap: int) {
+        this.length = 0;
+        this.capacity = cap;
+        if (cap < 1) {
+            this.capacity = 1;
+        }
+        unsafe {
+            this.buffer = malloc(this.capacity);
+            var end_ptr = &this.buffer[0];
+            *end_ptr = 0;
+        }
+    }
+
+    fn op_add(other: *ComplexString) -> *ComplexString {
+        var new_len = this.length + other.length;
+        var new_cap = new_len + 1;
+        
+        var result = new ComplexString(new_cap);  // This calls constructor 2
+        result.length = new_len;
+        
+        unsafe {
+            var dest = result.buffer;
+            memcpy(dest, this.buffer, this.length);
+            
+            dest = &result.buffer[this.length];
+            memcpy(dest, other.buffer, other.length);
+            
+            var end = &result.buffer[new_len];
+            *end = 0;
+        }
+        
+        return result;
+    }
+}
+
+fn main() -> int {
+    var s = new ComplexString(10);
+    return s.length;
+}

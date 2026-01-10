@@ -61,13 +61,13 @@ fn safe_set(ptr: *byte, buffer_size: int, value: int, set_size: int) -> bool {
 }
 
 // Memory utilities
-fn is_aligned(ptr: *byte, alignment: int) -> bool {
-    unsafe {
-        var addr = ptr;
-        var remainder = addr % alignment;
-        return remainder == 0;
-    }
-}
+// fn is_aligned(ptr: *byte, alignment: int) -> bool {
+//     unsafe {
+//         var addr = ptr;
+//         var remainder = addr % alignment;
+//         return remainder == 0;
+//     }
+// }
 
 fn align_up(size: int, alignment: int) -> int {
     var remainder = size % alignment;

@@ -1,0 +1,16 @@
+import "std/math.olang";
+
+fn main() -> int {
+    var x: int = 15;
+    var y: int = 25;
+    
+    var sum: int = x + y;
+    var diff: int = x - y;
+    var product: int = x * y;
+    
+    var abs_diff: int = abs(diff);
+    var min_val: int = min(x, y);
+    var max_val: int = max(x, y);
+    
+    return sum;
+}

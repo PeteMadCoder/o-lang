@@ -1,0 +1,64 @@
+// External C functions
+fn malloc(size: int) -> *byte;
+fn free(ptr: *byte);
+fn memcpy(dest: *byte, src: *byte, n: int) -> *void;
+
+struct ProblematicString {
+    buffer: *byte;
+    length: int;
+    capacity: int;
+
+    // Constructor 1: Creates from char pointer
+    new(ptr: *char) {
+        var len = 10;  // Simplified
+        this.length = len;
+        this.capacity = len + 1;
+        unsafe {
+            this.buffer = malloc(this.capacity);
+            var end_ptr = &this.buffer[len];
+            *end_ptr = 0;
+        }
+    }
+
+    // Constructor 2: Creates with capacity
+    new(cap: int) {
+        this.length = 0;
+        this.capacity = cap;
+        if (cap < 1) {
+            this.capacity = 1;
+        }
+        unsafe {
+            this.buffer = malloc(this.capacity);
+            *this.buffer = 0;
+        }
+    }
+
+    fn op_add(other: *ProblematicString) -> *ProblematicString {
+        var new_len = this.length + other.length;
+        var new_cap = new_len + 1;
+
+        var result = new ProblematicString(new_cap);  // This is the problematic call
+        result.length = new_len;
+
+        unsafe {
+            // Copy this
+            var dest = result.buffer;
+            memcpy(dest, this.buffer, this.length);
+
+            // Copy other
+            dest = &result.buffer[this.length];
+            memcpy(dest, other.buffer, other.length);
+
+            // Null terminate
+            var end = &result.buffer[new_len];
+            *end = 0;
+        }
+
+        return result;
+    }
+}
+
+fn main() -> int {
+    var s = new ProblematicString(10);
+    return s.length;
+}

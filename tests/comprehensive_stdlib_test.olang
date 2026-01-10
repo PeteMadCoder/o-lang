@@ -1,0 +1,53 @@
+import "std/io.olang";
+import "std/math.olang";
+import "std/memory.olang";
+import "std/vector.olang";
+
+fn main() -> int {
+    // Test basic variable declarations with new syntax
+    var x: int = 10;
+    var y: int = 20;
+    var sum: int = add(x, y);
+    
+    // Test print functions
+    print_int(sum);
+    println(" - This is a test");
+    
+    // Test math functions
+    var abs_val: int = abs(-5);
+    print_int(abs_val);
+    println(" (absolute value of -5)");
+    
+    var min_val: int = min(10, 5);
+    print_int(min_val);
+    println(" (minimum of 10 and 5)");
+    
+    // Test vector operations
+    var vec: Vector<int>;
+    vec.new(); // Initialize the vector
+    
+    vec.push(100);
+    vec.push(200);
+    vec.push(300);
+    
+    var vec_size: int = vec.size();
+    print_int(vec_size);
+    println(" (vector size)");
+    
+    var first_elem: int = vec[0];
+    print_int(first_elem);
+    println(" (first element of vector)");
+    
+    // Test memory functions (basic usage)
+    var ptr: *byte = alloc(10);
+    if (ptr != 0) {
+        zero(ptr, 10); // Initialize memory to zero
+        dealloc(ptr);  // Free the memory
+    }
+    
+    return sum;
+}
+
+fn add(a: int, b: int) -> int {
+    return a + b;
+}

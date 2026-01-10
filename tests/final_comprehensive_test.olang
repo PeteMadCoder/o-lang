@@ -1,0 +1,51 @@
+import "std/io.olang";
+import "std/math.olang";
+import "std/memory.olang";
+
+fn add(a: int, b: int) -> int {
+    return a + b;
+}
+
+fn subtract(a: int, b: int) -> int {
+    return a - b;
+}
+
+fn multiply(a: int, b: int) -> int {
+    return a * b;
+}
+
+fn main() -> int {
+    // Test modern variable declarations
+    var x: int = 15;
+    var y: int = 25;
+    let immutable_val: int = 100;  // Test immutable variable
+    
+    // Test function calls with new parameter syntax
+    var sum: int = add(x, y);
+    var diff: int = subtract(x, y);
+    var product: int = multiply(x, y);
+    
+    // Test print functions
+    print_int(sum);      // Should print 40
+    print_int(diff);     // Should print -10
+    print_int(product);  // Should print 375
+    
+    // Test math functions
+    var abs_diff: int = abs(diff);  // Should be 10
+    print_int(abs_diff);
+    
+    var min_val: int = min(x, y);   // Should be 15
+    print_int(min_val);
+    
+    var max_val: int = max(x, y);   // Should be 25
+    print_int(max_val);
+    
+    // Test memory functions (basic usage)
+    var ptr: *byte = alloc(5);
+    if (ptr != 0) {
+        zero(ptr, 5);  // Initialize memory to zero
+        dealloc(ptr);  // Free the memory
+    }
+    
+    return sum;
+}

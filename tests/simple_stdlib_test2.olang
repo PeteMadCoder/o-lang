@@ -1,0 +1,25 @@
+import "std/io.olang";
+import "std/math.olang";
+
+fn add(a: int, b: int) -> int {
+    return a + b;
+}
+
+fn main() -> int {
+    // Test basic variable declarations with new syntax
+    var x: int = 10;
+    var y: int = 20;
+    var sum: int = add(x, y);
+    
+    // Test print functions
+    print_int(sum);
+    
+    // Test math functions
+    var abs_val: int = abs(-5);
+    print_int(abs_val);
+    
+    var min_val: int = min(10, 5);
+    print_int(min_val);
+    
+    return sum;
+}

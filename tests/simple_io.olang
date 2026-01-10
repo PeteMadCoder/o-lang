@@ -1,14 +1,13 @@
 // External C functions
 fn printf(str: *byte);
 
-// Note: String-related functions are commented out due to complexity in constructor handling
-// fn print(s: *String) {
+// fn print(*String s) {
 //     unsafe {
 //         printf(s.c_str());
 //     }
 // }
 
-// fn println(s: *String) {
+// fn println(*String s) {
 //     print(s);
 //     unsafe {
 //         printf("\n");

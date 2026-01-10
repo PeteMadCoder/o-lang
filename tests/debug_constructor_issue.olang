@@ -1,0 +1,30 @@
+struct SimpleString {
+    buffer: *byte;
+    length: int;
+    capacity: int;
+
+    // Constructor 1: Creates from char pointer
+    new(ptr: *char) {
+        this.length = 0;
+        this.capacity = 10;
+    }
+
+    // Constructor 2: Creates with capacity
+    new(cap: int) {
+        this.length = 0;
+        this.capacity = cap;
+        if (cap < 1) {
+            this.capacity = 1;
+        }
+    }
+
+    fn create_another() -> *SimpleString {
+        var result = new SimpleString(5);  // This calls constructor 2
+        return result;
+    }
+}
+
+fn main() -> int {
+    var s = new SimpleString(10);
+    return s.length;
+}

@@ -1,0 +1,18 @@
+struct TestStruct {
+    value: int;
+
+    new(initial_value: int) {
+        this.value = initial_value;
+    }
+
+    fn create_another() -> *TestStruct {
+        var new_obj = new TestStruct(42);
+        return new_obj;
+    }
+}
+
+fn main() -> int {
+    var s = new TestStruct(10);
+    var other = s.create_another();
+    return other.value;
+}

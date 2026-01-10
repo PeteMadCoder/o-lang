@@ -1,0 +1,32 @@
+struct SimpleString {
+    buffer: *byte;
+    length: int;
+    capacity: int;
+
+    // Constructor: Creates an empty string with reserved capacity
+    new(cap: int) {
+        this.length = 0;
+        this.capacity = cap;
+        if (cap < 1) {
+            this.capacity = 1;
+        }
+
+        unsafe {
+            this.buffer = malloc(cap);
+            *this.buffer = 0;
+        }
+    }
+
+    fn get_length() -> int {
+        return this.length;
+    }
+}
+
+// External C functions
+fn malloc(size: int) -> *byte;
+fn free(ptr: *byte);
+
+fn main() -> int {
+    var s = new SimpleString(10);
+    return s.get_length();
+}
