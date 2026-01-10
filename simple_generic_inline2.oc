@@ -1,0 +1,13 @@
+struct Vector<T> {
+    count: int
+    data: T*
+
+    constructor() {
+        this.count = 0
+        this.data = null
+    }
+}
+
+fn main() {
+    var vec = new Vector<int>()
+}

@@ -286,6 +286,13 @@ void instantiateStruct(const std::string& genericName, const std::vector<OType>&
         llvm::Function *TheFunction = clonedProto->codegen();
         if (!TheFunction) continue;
 
+        // --- FIX: REGISTER INSTANTIATED NAME ---
+        // If this is a generic instantiation (e.g., Vector_int_push),
+        // the rest of the compiler needs to know this symbol exists.
+        std::string MangledName = clonedProto->getName();
+        RegisterFunctionProto(std::move(clonedProto)); // Register in Global Map
+        // ---------------------------------------
+
         // Create a basic block for the method body
         llvm::BasicBlock *MethodBlock = llvm::BasicBlock::Create(*TheContext, "entry", TheFunction);
         Builder->SetInsertPoint(MethodBlock);
@@ -377,6 +384,21 @@ void instantiateStruct(const std::string& genericName, const std::vector<OType>&
             func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, funcName, TheModule.get());
         }
 
+        // --- FIX: REGISTER INSTANTIATED CONSTRUCTOR NAME ---
+        // Create a prototype for the constructor and register it in the global registry
+        std::vector<std::pair<std::string, OType>> args;
+        for (size_t i = 0; i < paramNames.size(); ++i) {
+            OType argType = paramTypes[i]->isPointerTy() ?
+                OType(BaseType::Struct, 1, mangledName) :  // 'this' parameter
+                paramOTypes[i];  // other parameters
+            args.push_back({paramNames[i], argType});
+        }
+
+        // Create a temporary prototype just for registration purposes
+        auto tempProto = std::make_unique<PrototypeAST>(funcName, args, OType(BaseType::Void));
+        RegisterFunctionProto(std::move(tempProto)); // Register in Global Map
+        // ---------------------------------------
+
         // Create basic block
         llvm::BasicBlock* BB = llvm::BasicBlock::Create(*TheContext, "entry", func);
         Builder->SetInsertPoint(BB);
@@ -461,13 +483,26 @@ void instantiateStruct(const std::string& genericName, const std::vector<OType>&
     // Restore Context
     ScopeStack = SavedScopeStack;
 
-    // Remove the temporary function we created for context
-    TempFunc->eraseFromParent();
+    // --- FIX: ROBUST RESTORATION ---
+    // Don't erase the temporary function yet - we might need it for restoration
 
-    // Restore original insertion point - but be careful about dangling pointers
-    // The SavedInsertBlock might have been deleted during the instantiation process
-    // So we'll just clear the insertion point to be safe
-    Builder->ClearInsertionPoint();
+    if (SavedInsertBlock) {
+        // 1. Check if the block still has a parent function.
+        // If a block is detached, setting the insert point to it is undefined behavior.
+        if (SavedInsertBlock->getParent()) {
+            Builder->SetInsertPoint(SavedInsertBlock);
+        } else {
+            // The block we came from was deleted or corrupted.
+            // This is a critical state, but clearing is safer than crashing.
+            Builder->ClearInsertionPoint();
+        }
+    } else {
+        Builder->ClearInsertionPoint();
+    }
+
+    // Now it's safe to erase the temporary function
+    TempFunc->eraseFromParent();
+    // -------------------------------
 }
 
 // Helper to translate OType to llvm::Type

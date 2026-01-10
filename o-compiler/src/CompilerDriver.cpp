@@ -12,7 +12,7 @@ void CompilerDriver::processFile(const std::string& filename) {
     // 1. Resolve Filename
     std::string path = filename;
     bool found = false;
-    
+
     // Helper lambda to check existence
     auto checkPath = [&](std::string p) -> std::string {
         if (fs::exists(p)) return p;
@@ -62,7 +62,7 @@ void CompilerDriver::processFile(const std::string& filename) {
         std::cerr << "Error: Could not find file '" << filename << "'\n";
         return;
     }
-    
+
     // Canonicalize path to ensure uniqueness
     try {
         path = fs::canonical(path).string();
@@ -85,7 +85,7 @@ void CompilerDriver::processFile(const std::string& filename) {
         std::cerr << "Error: Could not open file '" << path << "'\n";
         return;
     }
-    
+
     std::stringstream buffer;
     buffer << file.rdbuf();
     std::string source_code = buffer.str();
