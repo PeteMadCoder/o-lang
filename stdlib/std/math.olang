@@ -1,34 +1,34 @@
 // External C math functions
-fn sin(float x) -> float;
-fn cos(float x) -> float;
-fn sqrt(float x) -> float;
-fn pow(float base, float exp) -> float;
-fn floor(float x) -> float;
-fn ceil(float x) -> float;
+fn sin(x: float) -> float;
+fn cos(x: float) -> float;
+fn sqrt(x: float) -> float;
+fn pow(base: float, exp: float) -> float;
+fn floor(x: float) -> float;
+fn ceil(x: float) -> float;
 
 // Integer math functions
-fn abs(int x) -> int {
+fn abs(x: int) -> int {
     if (x < 0) {
         return -x;
     }
     return x;
 }
 
-fn min(int a, int b) -> int {
+fn min(a: int, b: int) -> int {
     if (a < b) {
         return a;
     }
     return b;
 }
 
-fn max(int a, int b) -> int {
+fn max(a: int, b: int) -> int {
     if (a > b) {
         return a;
     }
     return b;
 }
 
-fn clamp(int value, int min_val, int max_val) -> int {
+fn clamp(value: int, min_val: int, max_val: int) -> int {
     if (value < min_val) {
         return min_val;
     }
@@ -39,28 +39,28 @@ fn clamp(int value, int min_val, int max_val) -> int {
 }
 
 // Float math functions
-fn abs_f(float x) -> float {
+fn abs_f(x: float) -> float {
     if (x < 0.0) {
         return -x;
     }
     return x;
 }
 
-fn min_f(float a, float b) -> float {
+fn min_f(a: float, b: float) -> float {
     if (a < b) {
         return a;
     }
     return b;
 }
 
-fn max_f(float a, float b) -> float {
+fn max_f(a: float, b: float) -> float {
     if (a > b) {
         return a;
     }
     return b;
 }
 
-fn clamp_f(float value, float min_val, float max_val) -> float {
+fn clamp_f(value: float, min_val: float, max_val: float) -> float {
     if (value < min_val) {
         return min_val;
     }
@@ -71,44 +71,44 @@ fn clamp_f(float value, float min_val, float max_val) -> float {
 }
 
 // Trigonometric functions (using external C library)
-fn sin_f(float x) -> float {
+fn sin_f(x: float) -> float {
     unsafe {
         return sin(x);
     }
 }
 
-fn cos_f(float x) -> float {
+fn cos_f(x: float) -> float {
     unsafe {
         return cos(x);
     }
 }
 
-fn sqrt_f(float x) -> float {
+fn sqrt_f(x: float) -> float {
     unsafe {
         return sqrt(x);
     }
 }
 
-fn pow_f(float base, float exp) -> float {
+fn pow_f(base: float, exp: float) -> float {
     unsafe {
         return pow(base, exp);
     }
 }
 
-fn floor_f(float x) -> float {
+fn floor_f(x: float) -> float {
     unsafe {
         return floor(x);
     }
 }
 
-fn ceil_f(float x) -> float {
+fn ceil_f(x: float) -> float {
     unsafe {
         return ceil(x);
     }
 }
 
 // Utility functions
-fn sign(int x) -> int {
+fn sign(x: int) -> int {
     if (x > 0) {
         return 1;
     }
@@ -118,7 +118,7 @@ fn sign(int x) -> int {
     return 0;
 }
 
-fn sign_f(float x) -> float {
+fn sign_f(x: float) -> float {
     if (x > 0.0) {
         return 1.0;
     }

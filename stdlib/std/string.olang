@@ -1,13 +1,13 @@
 // --- Standard Library Interface ---
 // External C functions
-fn strlen(*byte str) -> int;
-fn memcpy(*byte dest, *byte src, int n) -> *void;
-fn malloc(int size) -> *byte;
-fn free(*byte ptr);
-fn printf(*byte str);
+fn strlen(str: *byte) -> int;
+fn memcpy(dest: *byte, src: *byte, n: int) -> *void;
+fn malloc(size: int) -> *byte;
+fn free(ptr: *byte);
+fn printf(str: *byte);
 
 // Internal memcpy using pointer arithmetic
-fn my_memcpy(*byte dest, *byte src, int n) {
+fn my_memcpy(dest: *byte, src: *byte, n: int) {
     unsafe {
         var i = 0;
         while (i < n) {
@@ -21,27 +21,27 @@ fn my_memcpy(*byte dest, *byte src, int n) {
 
 // --- The String Class ---
 struct String {
-    *byte buffer;
-    int length;
-    int capacity;
+    buffer: *byte;
+    length: int;
+    capacity: int;
 
     // Constructor: Creates a String from a C-style string literal
-    new(*char ptr) {
+    new(ptr: *char) {
         var len = 0;
         unsafe {
             // Use external strlen
             len = strlen(ptr);
         }
-        
+
         this.length = len;
         this.capacity = len + 1;
-        
+
         unsafe {
             this.buffer = malloc(this.capacity);
-            
+
             // Use external memcpy.
             memcpy(this.buffer, ptr, len);
-            
+
             // Null terminate
             var end_ptr = &this.buffer[len];
             *end_ptr = 0;
@@ -49,31 +49,31 @@ struct String {
     }
 
     // Constructor: Creates an empty string with reserved capacity
-    new(int cap) {
+    new(cap: int) {
         this.length = 0;
         this.capacity = cap;
         if (cap < 1) {
             this.capacity = 1;
         }
-        
+
         unsafe {
             this.buffer = malloc(this.capacity);
             *this.buffer = 0;
         }
     }
 
-    fn append(*String str) {
-        // printf(this.buffer); 
-        
+    fn append(str: *String) {
+        // printf(this.buffer);
+
         var required_len = this.length + str.length;
-        
+
         if (required_len >= this.capacity) {
             var new_cap = required_len * 2;
             if (new_cap < 16) { new_cap = 16; }
-            
+
             unsafe {
                 var new_buf = malloc(new_cap);
-                
+
                 my_memcpy(new_buf, this.buffer, this.length);
                 free(this.buffer);
                 this.buffer = new_buf;
@@ -89,7 +89,7 @@ struct String {
                 *d = *s;
                 i = i + 1;
             }
-            
+
             this.length = required_len;
             var end_ptr = &this.buffer[this.length];
             *end_ptr = 0;
@@ -99,33 +99,33 @@ struct String {
     fn c_str() -> *byte {
         return this.buffer;
     }
-    
+
     // Operator Overloading: +
-    fn op_add(*String other) -> *String {
+    fn op_add(other: *String) -> *String {
         var new_len = this.length + other.length;
         var new_cap = new_len + 1;
-        
+
         var result = new String(new_cap);
         result.length = new_len;
-        
+
         unsafe {
             // Copy this
             var dest = result.buffer;
             memcpy(dest, this.buffer, this.length);
-            
+
             // Copy other
             dest = &result.buffer[this.length];
             memcpy(dest, other.buffer, other.length);
-            
+
             // Null terminate
             var end = &result.buffer[new_len];
             *end = 0;
         }
-        
+
         return result;
     }
 
-    fn op_index(int idx) -> int {
+    fn op_index(idx: int) -> int {
         unsafe {
             var result = this.buffer[idx];
             return result;

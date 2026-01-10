@@ -1,50 +1,50 @@
 // External C memory functions
-fn malloc(int size) -> *byte;
-fn free(*byte ptr);
-fn memcpy(*byte dest, *byte src, int n) -> *void;
-fn memset(*byte ptr, int value, int n) -> *void;
-fn memcmp(*byte ptr1, *byte ptr2, int n) -> int;
+fn malloc(size: int) -> *byte;
+fn free(ptr: *byte);
+fn memcpy(dest: *byte, src: *byte, n: int) -> *void;
+fn memset(ptr: *byte, value: int, n: int) -> *void;
+fn memcmp(ptr1: *byte, ptr2: *byte, n: int) -> int;
 
 // Memory allocation wrappers
-fn alloc(int size) -> *byte {
+fn alloc(size: int) -> *byte {
     unsafe {
         return malloc(size);
     }
 }
 
-fn dealloc(*byte ptr) {
+fn dealloc(ptr: *byte) {
     unsafe {
         free(ptr);
     }
 }
 
 // Memory manipulation functions
-fn copy(*byte dest, *byte src, int size) {
+fn copy(dest: *byte, src: *byte, size: int) {
     unsafe {
         memcpy(dest, src, size);
     }
 }
 
-fn set(*byte ptr, int value, int size) {
+fn set(ptr: *byte, value: int, size: int) {
     unsafe {
         memset(ptr, value, size);
     }
 }
 
-fn zero(*byte ptr, int size) {
+fn zero(ptr: *byte, size: int) {
     unsafe {
         memset(ptr, 0, size);
     }
 }
 
-fn compare(*byte ptr1, *byte ptr2, int size) -> int {
+fn compare(ptr1: *byte, ptr2: *byte, size: int) -> int {
     unsafe {
         return memcmp(ptr1, ptr2, size);
     }
 }
 
 // Safe memory operations with bounds checking
-fn safe_copy(*byte dest, int dest_size, *byte src, int copy_size) -> bool {
+fn safe_copy(dest: *byte, dest_size: int, src: *byte, copy_size: int) -> bool {
     if (copy_size > dest_size) {
         return false;
     }
@@ -52,7 +52,7 @@ fn safe_copy(*byte dest, int dest_size, *byte src, int copy_size) -> bool {
     return true;
 }
 
-fn safe_set(*byte ptr, int buffer_size, int value, int set_size) -> bool {
+fn safe_set(ptr: *byte, buffer_size: int, value: int, set_size: int) -> bool {
     if (set_size > buffer_size) {
         return false;
     }
@@ -61,7 +61,7 @@ fn safe_set(*byte ptr, int buffer_size, int value, int set_size) -> bool {
 }
 
 // Memory utilities
-fn is_aligned(*byte ptr, int alignment) -> bool {
+fn is_aligned(ptr: *byte, alignment: int) -> bool {
     unsafe {
         var addr = ptr;
         var remainder = addr % alignment;
@@ -69,7 +69,7 @@ fn is_aligned(*byte ptr, int alignment) -> bool {
     }
 }
 
-fn align_up(int size, int alignment) -> int {
+fn align_up(size: int, alignment: int) -> int {
     var remainder = size % alignment;
     if (remainder == 0) {
         return size;

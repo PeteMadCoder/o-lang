@@ -1,0 +1,10 @@
+fn main() -> int {
+    var x: int = 10;
+    var y: int = 20;
+    var result = add(x, y);
+    return result;
+}
+
+fn add(x: int, y: int) -> int {
+    return x + y;
+}

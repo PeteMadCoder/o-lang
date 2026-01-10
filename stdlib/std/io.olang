@@ -1,47 +1,47 @@
 // External C functions
-fn printf(*byte str);
+fn printf(str: *byte);
 
 import "string.olang";
 
-fn print(*String s) {
+fn print(s: *String) {
     unsafe {
         printf(s.c_str());
     }
 }
 
-fn println(*String s) {
+fn println(s: *String) {
     print(s);
     unsafe {
         printf("\n");
     }
 }
 
-fn print_int(int value) {
+fn print_int(value: int) {
     if (value == 0) {
         unsafe { printf("0"); }
         return;
     }
-    
-    var digits = new byte[12]; 
+
+    var digits = new byte[12];
     var pos = 0;
     var temp = value;
-    
+
     if (temp < 0) {
         temp = -temp;
     }
-    
+
     while (temp > 0) {
         var digit = (temp % 10) + 48;
-        digits[pos] = digit; 
+        digits[pos] = digit;
         temp = temp / 10;
         pos = pos + 1;
     }
-    
+
     if (value < 0) {
         digits[pos] = 45; // '-'
         pos = pos + 1;
     }
-    
+
     unsafe {
         var i = pos - 1;
         while (i >= 0) {
@@ -52,7 +52,7 @@ fn print_int(int value) {
     }
 }
 
-fn print_float(float value) {
+fn print_float(value: float) {
     unsafe {
         // Simple approach: use external printf for now
         // TODO: Implement proper float-to-string conversion
@@ -60,7 +60,7 @@ fn print_float(float value) {
     }
 }
 
-fn print_char(int c) {
+fn print_char(c: int) {
     unsafe {
         var ch = c;
         printf(&ch);
