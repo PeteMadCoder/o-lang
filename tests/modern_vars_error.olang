@@ -1,0 +1,5 @@
+fn main() -> int {
+    let z = 50;
+    z = 51;  // This should trigger a Compiler Error: Cannot reassign constant 'z'
+    return z;
+}

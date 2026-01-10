@@ -1,0 +1,15 @@
+struct Point {
+    x: int;
+    y: int;
+}
+
+fn distance_squared(p: Point) -> int {
+    return p.x * p.x + p.y * p.y;
+}
+
+fn main() -> int {
+    var p: Point;
+    p.x = 3;
+    p.y = 4;
+    return distance_squared(p);
+}

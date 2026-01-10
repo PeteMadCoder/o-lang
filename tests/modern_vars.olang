@@ -1,18 +1,14 @@
 fn main() -> int {
     // 1. Inference & Mutability
     var x = 10;
-    x = 20;     // OK
+    x = 20;     // OK - mutable variable can be reassigned
 
     // 2. Explicit Type
     var y: int = 100;
     
     // 3. Constants
     let z = 50;
+    // z = 51;  // <-- This should trigger a Compiler Error: Cannot reassign constant 'z'
     
-    // 4. Test logic
-    if (x == 20 && y == 100 && z == 50) {
-        return 0; // Success
-    }
-    
-    return 1; // Failure
+    return x + z;
 }

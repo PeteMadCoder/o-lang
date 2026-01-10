@@ -1,5 +1,6 @@
 #include "AST.h"
 #include <map>
+#include <set>
 
 // --- Global Compiler State ---
 std::unique_ptr<llvm::LLVMContext> TheContext;
@@ -14,6 +15,7 @@ struct ScopeLayer {
 };
 
 std::vector<ScopeLayer> ScopeStack;
+std::vector<std::set<std::string>> ImmutableVars; // Stack of scopes for immutable variables
 std::map<std::string, OType> FunctionReturnTypes;
 
 std::unordered_map<std::string, llvm::StructType*> StructTypes;
@@ -80,6 +82,7 @@ llvm::Function *getFreeFunc() {
 
 void EnterScope() {
     ScopeStack.push_back(ScopeLayer());
+    ImmutableVars.push_back(std::set<std::string>());
 }
 
 // Helper to emit cleanup code for a scope layer
@@ -114,6 +117,9 @@ void ExitScope() {
         auto& layer = ScopeStack.back();
         EmitCleanup(layer);
         ScopeStack.pop_back();
+        if (!ImmutableVars.empty()) {
+            ImmutableVars.pop_back();
+        }
     } else {
         fprintf(stderr, "Error: Scope stack underflow\n");
     }
@@ -158,6 +164,8 @@ void InitializeModuleAndPassManager() {
     TheContext = std::make_unique<llvm::LLVMContext>();
     TheModule = std::make_unique<llvm::Module>("O_Module", *TheContext);
     Builder = std::make_unique<llvm::IRBuilder<>>(*TheContext);
+    // Initialize the immutable vars stack with an empty set for the global scope
+    ImmutableVars.push_back(std::set<std::string>());
 }
 
 void LogError(const char *Str) {
@@ -701,28 +709,47 @@ llvm::Value *VarDeclExprAST::codegen() {
     else if (Init) VarType = Init->getOType();
     
     AddVariableType(Name, VarType);
-    
+
     // RAII Registration: If type is Slice (Dynamic Array), register for cleanup
     if (VarType.isArray() && VarType.getArrayNumElements() == -1) {
         RegisterCleanup(Alloca);
     }
-    
+
+    // Track immutable variables
+    if (getIsConst() && !ImmutableVars.empty()) {
+        ImmutableVars.back().insert(Name);
+    }
+
     return Alloca; // Return the address
 }
 
 llvm::Value *AssignmentExprAST::codegen() {
     llvm::Value *Val = RHS->codegen();
     if (!Val) return nullptr;
-    
+
     llvm::Value *Ptr = LHS->codegenAddress();
     if (!Ptr) {
         LogError("Left-hand side of assignment must be an l-value (variable, array index, dereference)");
         return nullptr;
     }
-    
+
+    // Check if we're trying to assign to a constant variable
+    // First, check if the left-hand side is a simple variable reference
+    if (auto *VarExpr = dynamic_cast<VariableExprAST*>(LHS.get())) {
+        std::string VarName = VarExpr->getName();
+
+        // Check all scopes from innermost to outermost for immutable variables
+        for (auto it = ImmutableVars.rbegin(); it != ImmutableVars.rend(); ++it) {
+            if (it->count(VarName)) {
+                LogError(("Cannot reassign constant '" + VarName + "'").c_str());
+                return nullptr;
+            }
+        }
+    }
+
     // Check types and cast if needed (e.g. char to int promotion in some cases, or int to byte)
     // For now, assume types match or rely on LLVM to complain/cast implicitly if compatible
-    
+
     Builder->CreateStore(Val, Ptr);
     return Val;
 }
@@ -1510,6 +1537,8 @@ llvm::Function *FunctionAST::codegen() {
     if (CurrentBlock && CurrentBlock->getParent() == TheFunction) {
         // We're already in the right function, just process the body
         ScopeStack.clear();
+        ImmutableVars.clear(); // Clear immutable vars stack
+        ImmutableVars.push_back(std::set<std::string>()); // Initialize with global scope
         EnterScope(); // Function Scope
 
         // Register types from prototype
@@ -1538,6 +1567,8 @@ llvm::Function *FunctionAST::codegen() {
         Builder->SetInsertPoint(BB);
 
         ScopeStack.clear();
+        ImmutableVars.clear(); // Clear immutable vars stack
+        ImmutableVars.push_back(std::set<std::string>()); // Initialize with global scope
         EnterScope(); // Function Scope
 
         // Register types from prototype

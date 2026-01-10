@@ -623,13 +623,16 @@ class VarDeclExprAST : public ExprAST {
     std::unique_ptr<ExprAST> Init;
     OType ExplicitType; // For explicit type annotations
     bool HasExplicitType;
+    bool IsConst; // <--- New field
+
 public:
-    VarDeclExprAST(const std::string &Name, std::unique_ptr<ExprAST> Init, 
-                   OType ExplicitType = OType(), bool HasExplicitType = false)
-        : Name(Name), Init(std::move(Init)), ExplicitType(ExplicitType), HasExplicitType(HasExplicitType) {}
+    VarDeclExprAST(const std::string &Name, std::unique_ptr<ExprAST> Init,
+                   OType ExplicitType = OType(), bool HasExplicitType = false, bool IsConst = false)
+        : Name(Name), Init(std::move(Init)), ExplicitType(ExplicitType), HasExplicitType(HasExplicitType), IsConst(IsConst) {}
     llvm::Value *codegen() override;
+    bool getIsConst() const { return IsConst; } // <--- New getter
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
-        return std::make_unique<VarDeclExprAST>(Name, Init ? Init->clone(typeMap) : nullptr, ExplicitType.substitute(typeMap), HasExplicitType);
+        return std::make_unique<VarDeclExprAST>(Name, Init ? Init->clone(typeMap) : nullptr, ExplicitType.substitute(typeMap), HasExplicitType, IsConst);
     }
 };
 

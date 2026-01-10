@@ -10,7 +10,7 @@ enum class TokenType {
     Identifier, Integer, Float, CharLit, StringLit,
 
     // Keywords
-    Fn, Var, Mut, Return, If, Else, While, For, Struct, Class, Import, Module,
+    Fn, Var, Let, Mut, Return, If, Else, While, For, Struct, Class, Import, Module,
     Open, Virtual, Override, New, Shared, Unsafe, Match, Delete,
     
     // Primitive Types

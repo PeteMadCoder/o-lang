@@ -613,14 +613,16 @@ std::unique_ptr<ExprAST> Parser::ParseExpression() {
 }
 
 std::unique_ptr<ExprAST> Parser::ParseVarDecl() {
-    getNextToken(); // eat 'var'
-    
+    TokenType declType = curTok.type; // Store whether it's var or let
+    bool isConst = (declType == TokenType::Let);
+    getNextToken(); // eat 'var' or 'let'
+
     if (curTok.type != TokenType::Identifier)
-        return LogError("Expected identifier after var");
-    
+        return LogError("Expected identifier after var/let");
+
     std::string Name = curTok.text;
     getNextToken(); // eat identifier
-    
+
     // Check for optional type annotation: var name: type = value
     OType ExplicitType;
     bool HasExplicitType = false;
@@ -629,7 +631,7 @@ std::unique_ptr<ExprAST> Parser::ParseVarDecl() {
         ExplicitType = ParseType();
         HasExplicitType = true;
     }
-    
+
     std::unique_ptr<ExprAST> Init = nullptr;
     if (curTok.type == TokenType::Equal) {
         getNextToken(); // eat '='
@@ -638,15 +640,18 @@ std::unique_ptr<ExprAST> Parser::ParseVarDecl() {
     } else if (HasExplicitType && curTok.type == TokenType::Semicolon) {
         // Declaration without initialization (e.g. var x: int;)
         // We will handle zero-init in codegen
+    } else if (isConst) {
+        // Constants must be initialized
+        return LogError("Constants must be initialized");
     } else {
         return LogError("Expected '=' in variable declaration");
     }
-    
-    if (curTok.type != TokenType::Semicolon) 
+
+    if (curTok.type != TokenType::Semicolon)
         return LogError("Expected ';' after variable declaration");
     getNextToken(); // eat ';'
-    
-    return std::make_unique<VarDeclExprAST>(Name, std::move(Init), ExplicitType, HasExplicitType);
+
+    return std::make_unique<VarDeclExprAST>(Name, std::move(Init), ExplicitType, HasExplicitType, isConst);
 }
 
 std::unique_ptr<ExprAST> Parser::ParseWhileStmt() {
@@ -746,7 +751,7 @@ std::unique_ptr<ExprAST> Parser::ParseStatement() {
     if (curTok.type == TokenType::For) {
         return ParseForStmt();
     }
-    if (curTok.type == TokenType::Var) {
+    if (curTok.type == TokenType::Var || curTok.type == TokenType::Let) {
         return ParseVarDecl();
     }
     
@@ -814,19 +819,24 @@ std::unique_ptr<PrototypeAST> Parser::ParsePrototype() {
     getNextToken();
 
     std::vector<std::pair<std::string, OType>> Args;
-    while (curTok.type == TokenType::TypeInt || curTok.type == TokenType::TypeFloat || 
-           curTok.type == TokenType::TypeBool || curTok.type == TokenType::TypeVoid ||
-           curTok.type == TokenType::TypeChar || curTok.type == TokenType::TypeByte ||
-           curTok.type == TokenType::Star || curTok.type == TokenType::Identifier) {
-        // Parse "Type Name" (including pointer types like *int, **float, and array types like int[10])
-        OType ArgType = ParseType();
-        
-        if (curTok.type != TokenType::Identifier) return LogErrorP("Expected arg name");
+    while (curTok.type != TokenType::RParen && curTok.type != TokenType::EoF) {
+        // Parse "Name: Type" (modern syntax similar to var declarations)
+        if (curTok.type != TokenType::Identifier) return LogErrorP("Expected parameter name");
         std::string ArgName = curTok.text;
-        Args.push_back({ArgName, ArgType});
-        getNextToken();
+        getNextToken(); // eat Name
 
-        if (curTok.type == TokenType::Comma) getNextToken();
+        if (curTok.type != TokenType::Colon) return LogErrorP("Expected ':' after parameter name");
+        getNextToken(); // eat ':'
+
+        OType ArgType = ParseType();
+
+        Args.push_back({ArgName, ArgType});
+
+        if (curTok.type == TokenType::Comma) {
+            getNextToken(); // eat ','
+        } else if (curTok.type != TokenType::RParen) {
+            return LogErrorP("Expected ',' or ')' in parameter list");
+        }
     }
 
     if (curTok.type != TokenType::RParen) return LogErrorP("Expected ')'");
@@ -914,25 +924,29 @@ std::unique_ptr<StructDeclAST> Parser::ParseStruct() {
             }
             Constructors.push_back(std::move(constructor));
         } else {
-            // Parse field: Type IdentifierList;
-            OType FieldType = ParseType();
-            
-            std::vector<std::string> FieldNames = ParseIdentifierList();
-            if (FieldNames.empty()) {
-                LogError("Expected field name(s)");
+            // Parse field: Name: Type;
+            if (curTok.type != TokenType::Identifier) {
+                LogError("Expected field name");
                 return nullptr;
             }
-            
+            std::string fieldName = curTok.text;
+            getNextToken(); // eat name
+
+            if (curTok.type != TokenType::Colon) {
+                LogError("Expected ':' after field name");
+                return nullptr;
+            }
+            getNextToken(); // eat ':'
+
+            OType fieldType = ParseType();
+
             if (curTok.type != TokenType::Semicolon) {
                 LogError("Expected ';' after field");
                 return nullptr;
             }
             getNextToken(); // eat ';'
-            
-            // Add all fields with the same type
-            for (const auto& fieldName : FieldNames) {
-                Fields.push_back({fieldName, FieldType});
-            }
+
+            Fields.push_back({fieldName, fieldType});
         }
     }
     
@@ -1040,24 +1054,29 @@ std::unique_ptr<ClassDeclAST> Parser::ParseClass() {
             }
             Constructors.push_back(std::move(constructor));
         } else {
-            // Parse field: Type IdentifierList;
-            OType FieldType = ParseType();
-            
-            std::vector<std::string> FieldNames = ParseIdentifierList();
-            if (FieldNames.empty()) {
-                LogError("Expected field name(s)");
+            // Parse field: Name: Type;
+            if (curTok.type != TokenType::Identifier) {
+                LogError("Expected field name");
                 return nullptr;
             }
-            
+            std::string fieldName = curTok.text;
+            getNextToken(); // eat name
+
+            if (curTok.type != TokenType::Colon) {
+                LogError("Expected ':' after field name");
+                return nullptr;
+            }
+            getNextToken(); // eat ':'
+
+            OType fieldType = ParseType();
+
             if (curTok.type != TokenType::Semicolon) {
                 LogError("Expected ';' after field");
                 return nullptr;
             }
             getNextToken(); // eat ';'
-            
-            for (const auto& fieldName : FieldNames) {
-                Fields.push_back({fieldName, FieldType});
-            }
+
+            Fields.push_back({fieldName, fieldType});
         }
     }
     
@@ -1132,23 +1151,32 @@ std::unique_ptr<ConstructorAST> Parser::ParseConstructor() {
     getNextToken(); // eat '('
     
     std::vector<std::pair<std::string, OType>> Params;
-    
+
     while (curTok.type != TokenType::RParen && curTok.type != TokenType::EoF) {
-        // Parse parameter: Type Name
-        OType ParamType = ParseType();
-        
+        // Parse parameter: Name: Type (modern syntax)
         if (curTok.type != TokenType::Identifier) {
             LogError("Expected parameter name");
             return nullptr;
         }
-        
+
         std::string ParamName = curTok.text;
         getNextToken(); // eat param name
-        
+
+        if (curTok.type != TokenType::Colon) {
+            LogError("Expected ':' after parameter name");
+            return nullptr;
+        }
+        getNextToken(); // eat ':'
+
+        OType ParamType = ParseType();
+
         Params.push_back({ParamName, ParamType});
-        
+
         if (curTok.type == TokenType::Comma) {
             getNextToken(); // eat ','
+        } else if (curTok.type != TokenType::RParen) {
+            LogError("Expected ',' or ')' in parameter list");
+            return nullptr;
         }
     }
     

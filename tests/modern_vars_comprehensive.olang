@@ -1,0 +1,19 @@
+fn main() -> int {
+    // Test var with inference
+    var x = 10;
+    x = 20;  // OK - mutable
+    
+    // Test var with explicit type
+    var y: int = 30;
+    y = 40;  // OK - mutable
+    
+    // Test let with inference
+    let z = 50;
+    // z = 51;  // Would cause error if uncommented
+    
+    // Test let with explicit type
+    let w: int = 60;
+    // w = 61;  // Would cause error if uncommented
+    
+    return x + y + z + w;
+}

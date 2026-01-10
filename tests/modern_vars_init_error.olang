@@ -1,0 +1,4 @@
+fn main() -> int {
+    let x;  // This should trigger an error: Constants must be initialized
+    return 0;
+}
