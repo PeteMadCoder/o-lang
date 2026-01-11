@@ -1,0 +1,17 @@
+struct Box<T> {
+    value: T;
+    
+    new(value: T) {
+        this.value = value;
+    }
+    
+    fn get_value() -> T {
+        return this.value;
+    }
+}
+
+fn main() -> int {
+    var int_box = new Box<int>(42);
+    var result = int_box.get_value();
+    return result;
+}

@@ -48,7 +48,9 @@ int main(int argc, char** argv) {
     driver.addIncludePath(".");
     driver.addIncludePath("tests");
     driver.addIncludePath("o-compiler/tests");
+    driver.addIncludePath("../stdlib");
     driver.addIncludePath("stdlib");
+    driver.addIncludePath("../../stdlib");
     
     for (const auto& path : IncludePaths) {
         driver.addIncludePath(path);

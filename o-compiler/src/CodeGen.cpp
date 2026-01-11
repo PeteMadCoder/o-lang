@@ -241,35 +241,71 @@ llvm::Type* instantiateStruct(const std::string& genericName, const std::vector<
 
     size_t offset = 0;
     for (const auto& field : newAST->getFields()) {
-        llvm::Type* fieldType = getLLVMType(field.second);
+        // Apply type substitution to the field type
+        OType substitutedFieldType = field.second.substitute(typeMap);
+
+        // Validate the substituted field type before processing
+        bool hasInvalidArraySize = false;
+        for (int arraySize : substitutedFieldType.arraySizes) {
+            if (arraySize < -1 || arraySize == 0) {  // -1 is valid for slices
+                fprintf(stderr, "Warning: Invalid array size %d in field type, skipping field\n", arraySize);
+                hasInvalidArraySize = true;
+                break;
+            }
+        }
+
+        if (hasInvalidArraySize) {
+            continue; // Skip this field
+        }
+
+        llvm::Type* fieldType = getLLVMType(substitutedFieldType);
         if (!fieldType) {
             // If we can't get the LLVM type, try instantiating dependent generic types first
-            if (field.second.base == BaseType::Struct && !field.second.genericArgs.empty()) {
-                llvm::Type* depType = instantiateStruct(field.second.structName, field.second.genericArgs);
+            if (substitutedFieldType.base == BaseType::Struct && !substitutedFieldType.genericArgs.empty()) {
+                llvm::Type* depType = instantiateStruct(substitutedFieldType.structName, substitutedFieldType.genericArgs);
                 if (depType) {
-                    fieldType = getLLVMType(field.second);
+                    fieldType = getLLVMType(substitutedFieldType);
                 }
             }
-            if (!fieldType) continue; // Error
+            if (!fieldType) {
+                fprintf(stderr, "Error: Could not get LLVM type for field %s in struct %s, skipping\n", field.first.c_str(), mangledName.c_str());
+                continue; // Error
+            }
         }
 
         fieldTypes.push_back(fieldType);
 
         FieldInfo info;
         info.name = field.first;
-        info.type = field.second;
+        info.type = substitutedFieldType;  // Use the substituted type
         info.offset = offset;
         fieldInfos.push_back(info);
 
         // Simple offset calculation (no padding for now)
-        if (field.second.base == BaseType::Int || field.second.base == BaseType::Float) offset += 4;
-        else if (field.second.base == BaseType::Char || field.second.base == BaseType::Byte || field.second.base == BaseType::Bool) offset += 1;
+        if (substitutedFieldType.base == BaseType::Int || substitutedFieldType.base == BaseType::Float) offset += 4;
+        else if (substitutedFieldType.base == BaseType::Char || substitutedFieldType.base == BaseType::Byte || substitutedFieldType.base == BaseType::Bool) offset += 1;
         else offset += 8; // pointers and other types
     }
 
     // Create LLVM struct type
     llvm::StructType* structType = llvm::StructType::create(*TheContext, mangledName);
     StructTypes[mangledName] = structType;
+
+    // Validate field types before setting the body
+    bool hasInvalidType = false;
+    for (auto* fieldType : fieldTypes) {
+        if (!fieldType) {
+            fprintf(stderr, "Error: Null field type found in struct %s\n", mangledName.c_str());
+            hasInvalidType = true;
+            break;
+        }
+    }
+
+    if (hasInvalidType) {
+        fprintf(stderr, "Error: Invalid field types found, skipping struct body for %s\n", mangledName.c_str());
+        InProgressInstantiations.erase(mangledName);
+        return nullptr;
+    }
 
     // Set the body of the struct after all dependencies are resolved
     structType->setBody(fieldTypes);
@@ -611,14 +647,36 @@ llvm::Type* getLLVMType(const OType& t) {
                 baseType = llvm::Type::getVoidTy(*TheContext);
                 break;
             }
+            // Prevent creating arrays with size 0 or extremely large sizes which can cause issues
+            if (size == 0) {
+                fprintf(stderr, "Warning: Creating array with size 0, using size 1\n");
+                size = 1; // Use minimum size to prevent std::bad_array_new_length
+            }
+            // Check for extremely large array sizes that could cause allocation issues
+            if (size > 1000000) {
+                fprintf(stderr, "Warning: Array size %d is extremely large, using size 1000000\n", size);
+                size = 1000000;
+            }
+            // Additional safety check: make sure size is not too large to cause allocation issues
+            if (size > 1000000000) {  // 1 billion - very conservative limit
+                fprintf(stderr, "Error: Array size %d is too large, using void type\n", size);
+                baseType = llvm::Type::getVoidTy(*TheContext);
+                break;
+            }
             // Fixed Array
-            baseType = llvm::ArrayType::get(baseType, size);
+            try {
+                baseType = llvm::ArrayType::get(baseType, size);
+            } catch (const std::exception& e) {
+                fprintf(stderr, "Error creating array type with size %d: %s\n", size, e.what());
+                baseType = llvm::Type::getVoidTy(*TheContext);
+                break;
+            }
         }
     }
     
     // Handle Pointers
     for (int i = 0; i < t.pointerDepth; ++i) {
-        baseType = llvm::PointerType::get(*TheContext, 0);
+        baseType = llvm::PointerType::get(baseType, 0);
     }
     
     return baseType;
@@ -1141,9 +1199,44 @@ llvm::Value *MethodCallExprAST::codegen() {
     OType ObjType = Object->getOType();
     std::string StructName = ObjType.structName;
 
-    if (StructName.empty()) {
-        LogError("Method call on non-struct type");
-        return nullptr;
+    // Handle generic types
+    if (!ObjType.genericArgs.empty()) {
+        // Trigger instantiation of the generic struct if needed
+        instantiateStruct(ObjType.structName, ObjType.genericArgs);
+        StructName = mangleGenericName(ObjType.structName, ObjType.genericArgs);
+    } else if (StructName.empty()) {
+        // Check if this might be a variable whose type we need to look up
+        if (auto* varExpr = dynamic_cast<VariableExprAST*>(Object.get())) {
+            llvm::AllocaInst* varAlloca = GetVariable(varExpr->getName());
+            if (varAlloca) {
+                // Get the stored type for this variable
+                OType storedType = GetVariableType(varExpr->getName());
+                if (storedType.base == BaseType::Struct) {
+                    StructName = storedType.structName;
+                    if (!storedType.genericArgs.empty()) {
+                        instantiateStruct(storedType.structName, storedType.genericArgs);
+                        StructName = mangleGenericName(storedType.structName, storedType.genericArgs);
+                    }
+                }
+            }
+        }
+
+        // If still empty, check if this is a static method call (struct name used as namespace)
+        if (StructName.empty()) {
+            if (auto* varExpr = dynamic_cast<VariableExprAST*>(Object.get())) {
+                std::string varName = varExpr->getName();
+
+                // Check if this name corresponds to a struct type
+                if (TypeRegistry::getInstance().hasStruct(varName)) {
+                    StructName = varName;
+                }
+            }
+        }
+
+        if (StructName.empty()) {
+            LogError("Method call on non-struct type");
+            return nullptr;
+        }
     }
 
     if (!ObjType.genericArgs.empty()) {
@@ -1159,12 +1252,6 @@ llvm::Value *MethodCallExprAST::codegen() {
     std::string MangledName = StructName + "_" + MethodName;
     llvm::Function *CalleeF = TheModule->getFunction(MangledName);
 
-    // Additional safety check for function
-    if (!CalleeF || !CalleeF->getFunctionType()) {
-        std::string err = "Invalid method function: " + MangledName;
-        LogError(err.c_str());
-        return nullptr;
-    }
     // If function not found, try to look it up in the global registry
     if (!CalleeF) {
         CalleeF = GetFunctionFromPrototype(MangledName);
@@ -1176,30 +1263,61 @@ llvm::Value *MethodCallExprAST::codegen() {
         return nullptr;
     }
 
-    // 2. Prepare 'this' pointer
-    llvm::Value *ThisPtr = nullptr;
-    if (ObjType.isPointer()) {
-        ThisPtr = Object->codegen();
-    } else {
-        ThisPtr = Object->codegenAddress();
-        if (!ThisPtr) {
-            // R-value struct (returned from function, etc). Store to temp.
-            llvm::Value *Val = Object->codegen();
-            if (!Val) return nullptr;
-             llvm::Function *TheFunction = Builder->GetInsertBlock()->getParent();
-             llvm::AllocaInst *TempAlloca = CreateEntryBlockAlloca(TheFunction, "tmp_this", Val->getType());
-             Builder->CreateStore(Val, TempAlloca);
-             ThisPtr = TempAlloca;
+    // Additional safety check for function
+    if (!CalleeF || !CalleeF->getFunctionType()) {
+        std::string err = "Invalid method function: " + MangledName;
+        LogError(err.c_str());
+        return nullptr;
+    }
+
+    // Check if this is a static method call (no 'this' parameter)
+    // Static methods would not have 'this' as the first parameter
+    bool isStaticMethod = true;
+    if (!CalleeF->arg_empty()) {
+        // For instance methods, the first argument should be a pointer to the struct
+        // In LLVM 18 with opaque pointers, we can't directly check the pointee type
+        // So we'll use the naming convention: if the function name contains the struct name
+        // and the first argument is a pointer, assume it's an instance method
+        std::string funcName = CalleeF->getName().str();
+        if (funcName.find(StructName + "_") == 0 && CalleeF->getArg(0)->getType()->isPointerTy()) {
+            // This looks like an instance method (e.g., "IO_print_int" where first arg is IO*)
+            // Check if the struct type exists and matches
+            auto it = StructTypes.find(StructName);
+            if (it != StructTypes.end()) {
+                // For opaque pointers, we can't directly compare pointee types
+                // So we'll assume if the naming matches and it's a pointer, it's an instance method
+                isStaticMethod = false;
+            }
         }
     }
 
-    if (!ThisPtr) return nullptr;
-
     // 3. Prepare Arguments
     std::vector<llvm::Value *> ArgsV;
-    ArgsV.push_back(ThisPtr); // Inject 'this'
 
-    if (CalleeF->arg_size() != Args.size() + 1) {
+    llvm::Value *ThisPtr = nullptr;
+    if (!isStaticMethod) {
+        // 2. Prepare 'this' pointer for instance methods
+        if (ObjType.isPointer()) {
+            ThisPtr = Object->codegen();
+        } else {
+            ThisPtr = Object->codegenAddress();
+            if (!ThisPtr) {
+                // R-value struct (returned from function, etc). Store to temp.
+                llvm::Value *Val = Object->codegen();
+                if (!Val) return nullptr;
+                 llvm::Function *TheFunction = Builder->GetInsertBlock()->getParent();
+                 llvm::AllocaInst *TempAlloca = CreateEntryBlockAlloca(TheFunction, "tmp_this", Val->getType());
+                 Builder->CreateStore(Val, TempAlloca);
+                 ThisPtr = TempAlloca;
+            }
+        }
+
+        if (!ThisPtr) return nullptr;
+
+        ArgsV.push_back(ThisPtr); // Inject 'this'
+    }
+
+    if (CalleeF->arg_size() != Args.size() + (isStaticMethod ? 0 : 1)) {
         LogError("Incorrect # arguments passed to method");
         return nullptr;
     }
@@ -1209,8 +1327,9 @@ llvm::Value *MethodCallExprAST::codegen() {
         if (!ArgVal) return nullptr;
 
         // Implicit Cast: Fixed Array -> Slice
-        // Param Type (shifted by 1 for 'this')
-        llvm::Type *ParamType = CalleeF->getArg(i + 1)->getType();
+        // Param Type (adjusted for static methods - no 'this' offset)
+        unsigned paramIndex = i + (isStaticMethod ? 0 : 1); // Skip 'this' for instance methods
+        llvm::Type *ParamType = CalleeF->getArg(paramIndex)->getType();
         llvm::Type *ArgType = ArgVal->getType();
 
         // Check if Param is Slice ({i32, T*})
@@ -2158,6 +2277,9 @@ llvm::Value *NewExprAST::codegen() {
             // Force instantiation of the struct and its constructors
             llvm::Type* instantiatedType = instantiateStruct(ClassName, GenericArgs);
             std::cerr << "Instantiation result: " << (instantiatedType ? "SUCCESS" : "FAILED") << "\n";
+
+            // Process any deferred instantiations that might have been queued
+            processDeferredInstantiations();
 
             // Look again for the constructor after instantiation
             Constructor = TheModule->getFunction(MangledName);

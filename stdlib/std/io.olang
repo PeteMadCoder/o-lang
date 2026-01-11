@@ -1,67 +1,57 @@
-// External C functions
+// External C function declaration
 fn printf(str: *byte);
 
-// Note: String-related functions are commented out due to complexity in constructor handling
-// fn print(s: *String) {
-//     unsafe {
-//         printf(s.c_str());
-//     }
-// }
-
-// fn println(s: *String) {
-//     print(s);
-//     unsafe {
-//         printf("\n");
-//     }
-// }
-
-fn print_int(value: int) {
-    if (value == 0) {
-        unsafe { printf("0"); }
-        return;
-    }
-
-    var digits = new byte[12];
-    var pos = 0;
-    var temp = value;
-
-    if (temp < 0) {
-        temp = -temp;
-    }
-
-    while (temp > 0) {
-        var digit = (temp % 10) + 48;
-        digits[pos] = digit;
-        temp = temp / 10;
-        pos = pos + 1;
-    }
-
-    if (value < 0) {
-        digits[pos] = 45; // '-'
-        pos = pos + 1;
-    }
-
-    unsafe {
-        var i = pos - 1;
-        while (i >= 0) {
-            var c = digits[i];
-            printf(&c);
-            i = i - 1;
+// IO module as a struct with static methods
+struct IO {
+    // Print string with newline
+    fn println(msg: *byte) {
+        unsafe {
+            printf(msg);
+            printf("\n");
         }
     }
-}
 
-fn print_float(value: float) {
-    unsafe {
-        // Simple approach: use external printf for now
-        // TODO: Implement proper float-to-string conversion
-        printf("%.2f");
+    // Print string without newline
+    fn print(msg: *byte) {
+        unsafe {
+            printf(msg);
+        }
     }
-}
 
-fn print_char(c: int) {
-    unsafe {
-        var ch = c;
-        printf(&ch);
+    // Print integer
+    fn print_int(value: int) {
+        if (value == 0) {
+            unsafe { printf("0"); }
+            return;
+        }
+
+        // Handle negative numbers
+        if (value < 0) {
+            unsafe { printf("-"); }
+            value = -value;
+        }
+
+        // Convert integer to string by extracting digits
+        var digits = new byte[12];  // Enough for any 32-bit int
+        var pos = 0;
+        var temp = value;
+
+        // Extract digits in reverse order
+        while (temp > 0) {
+            var digit = (temp % 10) + 48;  // Convert to ASCII
+            digits[pos] = digit;
+            temp = temp / 10;
+            pos = pos + 1;
+        }
+
+        // Print digits in correct order (reverse the extracted digits)
+        unsafe {
+            var i = pos - 1;
+            while (i >= 0) {
+                var c = digits[i];
+                printf(&c);
+                i = i - 1;
+            }
+        }
     }
 }
