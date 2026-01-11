@@ -1,5 +1,5 @@
 O Language Compiler Comprehensive Test Suite
-Run Date: Sun Jan 11 12:38:29 AM WET 2026
+Run Date: Sun Jan 11 01:56:02 AM WET 2026
 ========================================
 RUN  basic_helloworld: Simple main function
 PASS basic_helloworld: Expected 'success', got 'success'
@@ -42,7 +42,7 @@ FAIL gen_multi: Expected 'success', got 'failure'
 RUN  op_overload: Operator overload
 PASS op_overload: Expected 'success', got 'success'
 RUN  stdlib_import: Import statement
-FAIL stdlib_import: Expected 'success', got 'failure'
+PASS stdlib_import: Expected 'success', got 'success'
 RUN  error_syntax: Invalid syntax should fail
 PASS error_syntax: Expected 'failure', got 'failure'
 RUN  error_undeclared: Undeclared variable should fail
