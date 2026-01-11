@@ -407,7 +407,7 @@ cat > "$TEMP_DIR/stdlib/import_test.olang" << 'EOF'
 import "std/io.olang";
 
 fn main() -> int {
-    IO.println("Hello from import test!");
+    println("Hello from import test!");
     return 0;
 }
 EOF
