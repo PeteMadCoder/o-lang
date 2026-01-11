@@ -88,24 +88,18 @@ var c = s[1];  // c = 101 ('e')
 
 ### `std/io.olang` - Input/Output Operations
 
-Provides console I/O functionality with clean, intuitive function names.
+Provides console I/O functionality with clean, intuitive top-level functions.
 
 #### Functions:
 
-##### `fn print(*String str)`
+##### `fn print(msg: *byte)`
 Prints a string to standard output without newline.
 
-##### `fn println(*String str)`  
+##### `fn println(msg: *byte)`  
 Prints a string to standard output with newline.
 
-##### `fn print_int(int value)`
+##### `fn print_int(value: int)`
 Prints an integer to standard output.
-
-##### `fn print_float(float value)`
-Prints a floating-point number to standard output.
-
-##### `fn print_char(int c)`
-Prints a single character to standard output.
 
 **Example:**
 ```o
@@ -114,9 +108,8 @@ import "string.olang";
 
 fn main() -> int {
     var msg = new String("Hello World!");
-    println(msg);
+    println(msg.c_str());
     print_int(42);
-    print_char(65); // Prints 'A'
     return 0;
 }
 ```
@@ -242,11 +235,11 @@ fn main() -> int {
     var message = greeting + target;
     
     // Print result
-    Console_println(message);
+    println(message.c_str());
     
     // Character access with operator overloading  
     var first_char = message[0];  // 'H' = 72
-    Console_print_int(first_char);
+    print_int(first_char);
     
     return 0;
 }

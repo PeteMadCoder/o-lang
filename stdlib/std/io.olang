@@ -1,57 +1,54 @@
 // External C function declaration
 fn printf(str: *byte);
 
-// IO module as a struct with static methods
-struct IO {
-    // Print string with newline
-    fn println(msg: *byte) {
-        unsafe {
-            printf(msg);
-            printf("\n");
-        }
+// Print string with newline
+fn println(msg: *byte) {
+    unsafe {
+        printf(msg);
+        printf("\n");
+    }
+}
+
+// Print string without newline
+fn print(msg: *byte) {
+    unsafe {
+        printf(msg);
+    }
+}
+
+// Print integer
+fn print_int(value: int) {
+    if (value == 0) {
+        unsafe { printf("0"); }
+        return;
     }
 
-    // Print string without newline
-    fn print(msg: *byte) {
-        unsafe {
-            printf(msg);
-        }
+    // Handle negative numbers
+    if (value < 0) {
+        unsafe { printf("-"); }
+        value = -value;
     }
 
-    // Print integer
-    fn print_int(value: int) {
-        if (value == 0) {
-            unsafe { printf("0"); }
-            return;
-        }
+    // Convert integer to string by extracting digits
+    var digits = new byte[12];  // Enough for any 32-bit int
+    var pos = 0;
+    var temp = value;
 
-        // Handle negative numbers
-        if (value < 0) {
-            unsafe { printf("-"); }
-            value = -value;
-        }
+    // Extract digits in reverse order
+    while (temp > 0) {
+        var digit = (temp % 10) + 48;  // Convert to ASCII
+        digits[pos] = digit;
+        temp = temp / 10;
+        pos = pos + 1;
+    }
 
-        // Convert integer to string by extracting digits
-        var digits = new byte[12];  // Enough for any 32-bit int
-        var pos = 0;
-        var temp = value;
-
-        // Extract digits in reverse order
-        while (temp > 0) {
-            var digit = (temp % 10) + 48;  // Convert to ASCII
-            digits[pos] = digit;
-            temp = temp / 10;
-            pos = pos + 1;
-        }
-
-        // Print digits in correct order (reverse the extracted digits)
-        unsafe {
-            var i = pos - 1;
-            while (i >= 0) {
-                var c = digits[i];
-                printf(&c);
-                i = i - 1;
-            }
+    // Print digits in correct order (reverse the extracted digits)
+    unsafe {
+        var i = pos - 1;
+        while (i >= 0) {
+            var c = digits[i];
+            printf(&c);
+            i = i - 1;
         }
     }
 }
