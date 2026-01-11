@@ -1,17 +1,22 @@
-struct Box<T> {
+import "std/io.olang";
+
+// Simple test to see if basic generic functionality works
+struct SimpleContainer<T> {
     value: T;
-
-    new(value: T) {
-        this.value = value;
+    
+    new(val: T) {
+        this.value = val;
     }
-
-    fn get_value() -> T {
+    
+    fn get() -> T {
         return this.value;
     }
 }
 
 fn main() -> int {
-    var int_box = new Box<int>(42);
-    var result = int_box.get_value();
-    return result;
+    var container = new SimpleContainer<int>(42);
+    var val = container.get();
+    print_int(val);
+    println("");
+    return 0;
 }

@@ -1,0 +1,42 @@
+import "std/io.olang";
+
+// Test to isolate the assignment issue in generic types
+struct TestContainer<T> {
+    value: T;
+    
+    new(val: T) {
+        print_int(1);  // Constructor started
+        println("");
+        this.value = val;  // Assignment
+        print_int(2);  // Assignment done
+        println("");
+    }
+    
+    fn get() -> T {
+        print_int(4);  // Get started
+        println("");
+        var result = this.value;  // Read the value
+        print_int(5);  // Get done
+        println("");
+        print_int(result); // Print the value directly
+        println("");
+        return result;
+    }
+}
+
+fn main() -> int {
+    print_int(10);  // Main started
+    println("");
+    
+    var container = new TestContainer<int>(42);
+    print_int(20);  // Container created
+    println("");
+    
+    var val = container.get();
+    print_int(30);  // Value retrieved
+    println("");
+    print_int(val);  // Print the value
+    println("");
+    
+    return 0;
+}

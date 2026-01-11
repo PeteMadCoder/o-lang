@@ -241,8 +241,8 @@ llvm::Type* instantiateStruct(const std::string& genericName, const std::vector<
 
     size_t offset = 0;
     for (const auto& field : newAST->getFields()) {
-        // OType substitutedFieldType = field.second.substitute(typeMap);
-        OType substitutedFieldType = field.second;
+        // Explicitly substitute field types to ensure proper generic instantiation
+        OType substitutedFieldType = field.second.substitute(typeMap);
 
         // Validate the substituted field type before processing
         bool hasInvalidArraySize = false;
@@ -3281,12 +3281,24 @@ llvm::Value *MemberAccessAST::codegenAddress() {
 
 OType MemberAccessAST::getOType() const {
     OType ObjType = Object->getOType();
-    if (ObjType.base == BaseType::Struct) {
+    if (ObjType.base == BaseType::Struct || (ObjType.isPointer() && ObjType.getPointeeType().base == BaseType::Struct)) {
         // Handle Generics (similar to codegenAddress)
-        std::string StructName = ObjType.structName;
+        std::string StructName;
+
+        if (ObjType.isPointer()) {
+            StructName = ObjType.getPointeeType().structName;
+        } else {
+            StructName = ObjType.structName;
+        }
 
         if (!ObjType.genericArgs.empty()) {
-            StructName = mangleGenericName(ObjType.structName, ObjType.genericArgs);
+            StructName = mangleGenericName(StructName, ObjType.genericArgs);
+        } else if (ObjType.isPointer()) {
+            // For pointer types, check if the pointee type has generic args
+            OType pointeeType = ObjType.getPointeeType();
+            if (!pointeeType.genericArgs.empty()) {
+                StructName = mangleGenericName(pointeeType.structName, pointeeType.genericArgs);
+            }
         }
 
         // Lookup field type
