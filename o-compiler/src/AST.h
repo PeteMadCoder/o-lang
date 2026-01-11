@@ -221,6 +221,9 @@ public:
     llvm::Value *codegen() override;
     OType getOType() const override { return OType(BaseType::Bool); }
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override { return std::make_unique<BoolExprAST>(Val); }
+
+    // Getters for use in code generation
+    bool getVal() const { return Val; }
 };
 
 // 2b. While Loop Node
@@ -234,6 +237,10 @@ public:
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
         return std::make_unique<WhileExprAST>(Cond->clone(typeMap), Body->clone(typeMap));
     }
+
+    // Getters for use in code generation
+    ExprAST* getCond() { return Cond.get(); }
+    ExprAST* getBody() { return Body.get(); }
 };
 
 // 2c. For Loop Node
@@ -256,6 +263,12 @@ public:
             Body->clone(typeMap)
         );
     }
+
+    // Getters for use in code generation
+    ExprAST* getInit() { return Init.get(); }
+    ExprAST* getCond() { return Cond.get(); }
+    ExprAST* getStep() { return Step.get(); }
+    ExprAST* getBody() { return Body.get(); }
 };
 
 // 2d. Updated Number Node
@@ -279,6 +292,9 @@ public:
     llvm::Value *codegen() override;
     OType getOType() const override { return OType(BaseType::Char, 1); } // char*
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override { return std::make_unique<StringExprAST>(Val); }
+
+    // Getters for use in code generation
+    const std::string& getVal() const { return Val; }
 };
 
 /// StructDeclAST - Represents a struct declaration
@@ -334,9 +350,14 @@ public:
     void codegen(); // Register the class type with VTable
     void generateVTable(); // Generate VTable for virtual methods
     const std::string& getName() const { return Name; }
+    const std::string& getParentName() const { return ParentName; }
     bool hasParent() const { return !ParentName.empty(); }
     bool isOpen() const { return IsOpen; }
-    
+    const std::vector<std::pair<std::string, OType>>& getFields() const { return Fields; }
+    const std::vector<std::unique_ptr<FunctionAST>>& getMethods() const { return Methods; }
+    const std::vector<std::unique_ptr<ConstructorAST>>& getConstructors() const { return Constructors; }
+    const std::vector<std::string>& getVirtualMethods() const { return VirtualMethods; }
+
     std::unique_ptr<ClassDeclAST> clone(const std::map<std::string, OType>& typeMap = {}) const;
 };
 
@@ -353,6 +374,10 @@ public:
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
         return std::make_unique<MemberAccessAST>(Object->clone(typeMap), FieldName);
     }
+
+    // Getters for use in code generation
+    ExprAST* getObject() { return Object.get(); }
+    const std::string& getFieldName() const { return FieldName; }
 };
 
 /// ConstructorAST - Represents a struct constructor
@@ -385,6 +410,9 @@ public:
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
         return std::make_unique<AddressOfExprAST>(Operand->clone(typeMap));
     }
+
+    // Getters for use in code generation
+    ExprAST* getOperand() { return Operand.get(); }
 };
 
 /// DerefExprAST - Expression for dereferencing a pointer (*ptr)
@@ -399,6 +427,9 @@ public:
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
         return std::make_unique<DerefExprAST>(Operand->clone(typeMap));
     }
+
+    // Getters for use in code generation
+    ExprAST* getOperand() { return Operand.get(); }
 };
 
 /// NewExprAST - Expression for object instantiation (new ClassName(args))
@@ -414,11 +445,16 @@ public:
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
         OType temp(BaseType::Struct, 0, ClassName, {}, GenericArgs);
         temp = temp.substitute(typeMap);
-        
+
         std::vector<std::unique_ptr<ExprAST>> NewArgs;
         for(const auto& a : Args) NewArgs.push_back(a->clone(typeMap));
         return std::make_unique<NewExprAST>(temp.structName, std::move(NewArgs), temp.genericArgs);
     }
+
+    // Getters for use in code generation
+    const std::string& getClassName() const { return ClassName; }
+    std::vector<OType>& getGenericArgs() { return GenericArgs; }
+    std::vector<std::unique_ptr<ExprAST>>& getArgs() { return Args; }
 };
 
 /// NewArrayExprAST - Expression for array allocation (new int[size])
@@ -433,6 +469,10 @@ public:
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
         return std::make_unique<NewArrayExprAST>(ElementType.substitute(typeMap), Size->clone(typeMap));
     }
+
+    // Getters for use in code generation
+    OType getElementType() const { return ElementType; }
+    ExprAST* getSize() { return Size.get(); }
 };
 
 /// IndexExprAST - Expression for array indexing (arr[index])
@@ -448,6 +488,10 @@ public:
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
         return std::make_unique<IndexExprAST>(Array->clone(typeMap), Index->clone(typeMap));
     }
+
+    // Getters for use in code generation
+    ExprAST* getArray() { return Array.get(); }
+    ExprAST* getIndex() { return Index.get(); }
 };
 
 /// ArrayLiteralExprAST - Expression for array type literals (int[10])
@@ -462,6 +506,10 @@ public:
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
         return std::make_unique<ArrayLiteralExprAST>(ElementType.substitute(typeMap), Size);
     }
+
+    // Getters for use in code generation
+    OType getElementType() const { return ElementType; }
+    int getSize() const { return Size; }
 };
 
 /// ArrayInitExprAST - Expression for array initialization {1, 2, 3}
@@ -479,6 +527,10 @@ public:
         for(const auto& e : Elements) NewElements.push_back(e->clone(typeMap));
         return std::make_unique<ArrayInitExprAST>(std::move(NewElements), ElementType.substitute(typeMap));
     }
+
+    // Getters for use in code generation
+    std::vector<std::unique_ptr<ExprAST>>& getElements() { return Elements; }
+    OType getElementType() const { return ElementType; }
 };
 
 /// VariableExprAST - Expression class for referencing a variable, like "a".
@@ -486,7 +538,7 @@ class VariableExprAST : public ExprAST {
     std::string Name;
     std::string TypeName; // For struct types
 public:
-    VariableExprAST(const std::string &Name, const std::string &TypeName = "") 
+    VariableExprAST(const std::string &Name, const std::string &TypeName = "")
         : Name(Name), TypeName(TypeName) {}
     llvm::Value *codegen() override;
     llvm::Value *codegenAddress() override; // Return address without loading
@@ -502,6 +554,9 @@ public:
         }
         return std::make_unique<VariableExprAST>(Name, newTypeName);
     }
+
+    // Getters for use in code generation
+    llvm::Value* getLHS() { return nullptr; } // Placeholder - not all expressions have LHS
 };
 
 /// BinaryExprAST - Expression class for a binary operator (e.g., "+", "==", "&&").
@@ -517,6 +572,11 @@ public:
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
         return std::make_unique<BinaryExprAST>(Op, LHS->clone(typeMap), RHS->clone(typeMap));
     }
+
+    // Getters for use in code generation
+    const std::string& getOp() const { return Op; }
+    ExprAST* getLHS() { return LHS.get(); }
+    ExprAST* getRHS() { return RHS.get(); }
 };
 
 /// CallExprAST - Expression class for function calls.
@@ -534,6 +594,10 @@ public:
         for(const auto& a : Args) NewArgs.push_back(a->clone(typeMap));
         return std::make_unique<CallExprAST>(Callee, std::move(NewArgs));
     }
+
+    // Getters for use in code generation
+    const std::string& getCallee() const { return Callee; }
+    std::vector<std::unique_ptr<ExprAST>>& getArgs() { return Args; }
 };
 
 /// MethodCallExprAST - Expression class for method calls (obj.method(args)).
@@ -553,6 +617,11 @@ public:
         for(const auto& a : Args) NewArgs.push_back(a->clone(typeMap));
         return std::make_unique<MethodCallExprAST>(Object->clone(typeMap), MethodName, std::move(NewArgs));
     }
+
+    // Getters for use in code generation
+    ExprAST* getObject() { return Object.get(); }
+    const std::string& getMethodName() const { return MethodName; }
+    std::vector<std::unique_ptr<ExprAST>>& getArgs() { return Args; }
 };
 
 // 3. New Block Node
@@ -568,6 +637,9 @@ public:
         for(const auto& e : Expressions) NewExprs.push_back(e->clone(typeMap));
         return std::make_unique<BlockExprAST>(std::move(NewExprs));
     }
+
+    // Getters for use in code generation
+    std::vector<std::unique_ptr<ExprAST>>& getExpressions() { return Expressions; }
 };
 
 // 4. If Expression Node
@@ -583,6 +655,11 @@ public:
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
         return std::make_unique<IfExprAST>(Cond->clone(typeMap), Then->clone(typeMap), Else ? Else->clone(typeMap) : nullptr);
     }
+
+    // Getters for use in code generation
+    ExprAST* getCond() { return Cond.get(); }
+    ExprAST* getThen() { return Then.get(); }
+    ExprAST* getElse() { return Else.get(); }
 };
 
 // 4b. Match Expression Node
@@ -606,7 +683,7 @@ public:
         : Cond(std::move(Cond)), Cases(std::move(Cases)) {}
     
     llvm::Value *codegen() override;
-    OType getOType() const override { 
+    OType getOType() const override {
         if (!Cases.empty() && Cases[0].Body) return Cases[0].Body->getOType();
         return OType(BaseType::Void);
     }
@@ -615,6 +692,10 @@ public:
         for (const auto& c : Cases) NewCases.push_back(c.clone(typeMap));
         return std::make_unique<MatchExprAST>(Cond->clone(typeMap), std::move(NewCases));
     }
+
+    // Getters for use in code generation
+    ExprAST* getCond() { return Cond.get(); }
+    std::vector<MatchCase>& getCases() { return Cases; }
 };
 
 // 5. Var Declaration Node: var x = 10; or var arr = int[10];
@@ -634,6 +715,12 @@ public:
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
         return std::make_unique<VarDeclExprAST>(Name, Init ? Init->clone(typeMap) : nullptr, ExplicitType.substitute(typeMap), HasExplicitType, IsConst);
     }
+
+    // Getters for use in code generation
+    const std::string& getName() const { return Name; }
+    ExprAST* getInit() { return Init.get(); }
+    OType getExplicitType() const { return ExplicitType; }
+    bool hasExplicitType() const { return HasExplicitType; }
 };
 
 // 6. Assignment Node: x = 20; or arr[i] = 20;
@@ -648,6 +735,10 @@ public:
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
         return std::make_unique<AssignmentExprAST>(LHS->clone(typeMap), RHS->clone(typeMap));
     }
+
+    // Getters for use in code generation
+    ExprAST* getLHS() { return LHS.get(); }
+    ExprAST* getRHS() { return RHS.get(); }
 };
 
 // 7. Return Node: return x;
@@ -660,6 +751,9 @@ public:
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
         return std::make_unique<ReturnExprAST>(RetVal ? RetVal->clone(typeMap) : nullptr);
     }
+
+    // Getters for use in code generation
+    ExprAST* getRetVal() { return RetVal.get(); }
 };
 
 // 9. Delete Node
@@ -673,6 +767,9 @@ public:
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
         return std::make_unique<DeleteExprAST>(Operand->clone(typeMap));
     }
+
+    // Getters for use in code generation
+    ExprAST* getOperand() { return Operand.get(); }
 };
 
 // 10. Negate Node: -x
@@ -686,6 +783,9 @@ public:
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
         return std::make_unique<NegateExprAST>(Operand->clone(typeMap));
     }
+
+    // Getters for use in code generation
+    ExprAST* getOperand() { return Operand.get(); }
 };
 
 // 8. Updated Prototype to store types
@@ -768,6 +868,10 @@ public:
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
         return std::make_unique<CastExprAST>(Operand->clone(typeMap), TargetType.substitute(typeMap));
     }
+
+    // Getters for use in code generation
+    ExprAST* getOperand() { return Operand.get(); }
+    OType getTargetType() const { return TargetType; }
 };
 
 // Forward declaration for the global registry functions

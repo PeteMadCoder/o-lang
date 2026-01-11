@@ -18,6 +18,11 @@ set(SOURCES
     src/CodeGen.cpp
     src/Parser.cpp
     src/CompilerDriver.cpp
+    src/codegen/CodeGenerator.cpp
+    src/codegen/ExpressionCodeGen.cpp
+    src/codegen/FunctionCodeGen.cpp
+    src/codegen/TypeCodeGen.cpp
+    src/codegen/UtilityCodeGen.cpp
 )
 
 add_executable(oc ${SOURCES})

@@ -1,6 +1,0 @@
-import "std/io.olang";
-
-fn main() -> int {
-    IO.println("Hello from import test!");
-    return 0;
-}

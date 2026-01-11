@@ -1,24 +1,60 @@
 // External C functions
+import "memory.olang";
+
 fn exit(status: int);
 
 // --- The Vector Class ---
-// A simpler vector implementation that should work with the current compiler
+// A dynamic vector implementation that resizes as needed
 struct Vector<T> {
-    data: T[16];  // Fixed-size array instead of pointer
-    count: int;
+    data: *T;      // Pointer to dynamically allocated array
+    count: int;    // Number of elements currently in vector
+    capacity: int; // Total allocated capacity
 
-    // Constructor: Creates a vector with fixed capacity
+    // Constructor: Creates an empty vector with initial capacity
     new() {
+        this.capacity = 4;  // Start with small capacity
         this.count = 0;
+        // Allocate initial buffer
+        unsafe {
+            this.data = malloc(this.capacity * 4) as *T;  // Assuming T is int-sized
+        }
     }
 
     fn push(val: T) {
-        if (this.count >= 16) {
+        // Check if we need to resize
+        if (this.count >= this.capacity) {
+            // Double the capacity
+            var old_capacity = this.capacity;
+            this.capacity = this.capacity * 2;
+
+            // Allocate new buffer
+            var new_data: *T;
             unsafe {
-                exit(1); // Vector is full
+                new_data = malloc(this.capacity * 4) as *T;  // Assuming T is int-sized
             }
+
+            // Copy existing elements to new buffer
+            var i = 0;
+            while (i < this.count) {
+                unsafe {
+                    *(new_data + i) = *(this.data + i);
+                }
+                i = i + 1;
+            }
+
+            // Free old buffer
+            unsafe {
+                free(this.data as *byte);
+            }
+
+            // Update data pointer
+            this.data = new_data;
         }
-        this.data[this.count] = val;
+
+        // Add the new element
+        unsafe {
+            *(this.data + this.count) = val;
+        }
         this.count = this.count + 1;
     }
 
@@ -30,7 +66,9 @@ struct Vector<T> {
         }
 
         this.count = this.count - 1;
-        return this.data[this.count];
+        unsafe {
+            return *(this.data + this.count);
+        }
     }
 
     // Operator Overloading for Indexing
@@ -40,7 +78,9 @@ struct Vector<T> {
                 exit(1); // Bounds check
             }
         }
-        return this.data[idx];
+        unsafe {
+            return *(this.data + idx);
+        }
     }
 
     fn size() -> int {
@@ -52,6 +92,6 @@ struct Vector<T> {
     }
 
     fn full() -> bool {
-        return this.count >= 16;
+        return false; // Dynamic vector never gets "full" in the traditional sense
     }
 }

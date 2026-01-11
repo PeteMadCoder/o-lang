@@ -1,8 +1,0 @@
-import "std/io.olang";
-
-fn main() -> int {
-    var x = 42;
-    print_int(x);
-    println("");
-    return 0;
-}
