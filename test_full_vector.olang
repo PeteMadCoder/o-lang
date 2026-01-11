@@ -1,0 +1,73 @@
+import "std/io.olang";
+import "std/vector.olang";
+
+fn main() -> int {
+    var vec = new Vector<int>();
+    
+    print_int(1);  // Test 1: Creation
+    println("");
+    
+    vec.push(10);
+    vec.push(20);
+    vec.push(30);
+    
+    print_int(2);  // Test 2: Push operations
+    println("");
+    
+    var sz = vec.size();
+    print_int(sz);  // Should print 3
+    println("");
+    
+    print_int(3);  // Test 3: Index access
+    println("");
+    
+    var val1 = vec[0];
+    var val2 = vec[1];
+    var val3 = vec[2];
+    
+    print_int(val1);  // Should print 10
+    println("");
+    print_int(val2);  // Should print 20
+    println("");
+    print_int(val3);  // Should print 30
+    println("");
+    
+    print_int(4);  // Test 4: Add more elements to trigger resize
+    println("");
+    
+    vec.push(40);
+    vec.push(50);
+    vec.push(60);  // This should trigger the resize logic
+    
+    var sz2 = vec.size();
+    print_int(sz2);  // Should print 6
+    println("");
+    
+    var val4 = vec[3];
+    var val5 = vec[4];
+    var val6 = vec[5];
+    
+    print_int(val4);  // Should print 40
+    println("");
+    print_int(val5);  // Should print 50
+    println("");
+    print_int(val6);  // Should print 60
+    println("");
+    
+    print_int(5);  // Test 5: Test boundary conditions
+    println("");
+    
+    // Test accessing elements at boundaries
+    var first = vec[0];
+    var last = vec[5];
+    
+    print_int(first);  // Should print 10
+    println("");
+    print_int(last);  // Should print 60
+    println("");
+    
+    print_int(0);  // Success indicator
+    println("");
+    
+    return 0;
+}

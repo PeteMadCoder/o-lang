@@ -21,10 +21,10 @@ struct Vector<T> {
         if (this.size >= this.capacity) {
             var old_capacity = this.capacity;
             this.capacity = this.capacity * 2;  // Double the capacity
-            
+
             // Allocate new buffer
             var new_data = malloc(this.capacity * 4);
-            
+
             // Copy existing elements to new buffer using manual byte copy
             unsafe {
                 var i = 0;
@@ -36,20 +36,21 @@ struct Vector<T> {
                     i = i + 1;
                 }
             }
-            
+
             // Free old buffer
             free(this.data);
-            
+
             // Update data pointer
             this.data = new_data;
         }
-        
-        // Add the new element by casting to appropriate pointer type
+
+        // Add the new element by calculating byte offset
         unsafe {
-            // Cast data pointer to T* type for proper indexing
-            var typed_ptr = this.data as *T;
-            var element_ptr = typed_ptr + this.size;
-            *element_ptr = val;
+            var element_size = 4;  // Assuming 4 bytes per element (int)
+            var byte_offset = this.size * element_size;
+            var base_ptr = this.data as *int;  // Cast to int pointer for offset calculation
+            var element_addr = base_ptr + this.size;  // This will multiply by sizeof(int)
+            *element_addr = val;
         }
         this.size = this.size + 1;
     }
@@ -60,11 +61,11 @@ struct Vector<T> {
             // For now, return a default value instead of exiting
             return 0;  // This is a simplification
         }
-        
+
         unsafe {
-            // Cast data pointer to T* type for proper indexing
-            var typed_ptr = this.data as *T;
-            var element_ptr = typed_ptr + idx;
+            // Cast data pointer to int* type for proper indexing
+            var base_ptr = this.data as *int;
+            var element_ptr = base_ptr + idx;  // This will multiply by sizeof(int)
             return *element_ptr;
         }
     }
