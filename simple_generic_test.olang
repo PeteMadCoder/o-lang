@@ -1,0 +1,10 @@
+struct Box<T> {
+    val: T;
+    new(v: T) { this.val = v; }
+    fn get() -> T { return this.val; }
+}
+
+fn main() -> int {
+    var b = new Box<int>(42);
+    return b.get();
+}

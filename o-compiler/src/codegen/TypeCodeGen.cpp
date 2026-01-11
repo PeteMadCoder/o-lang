@@ -435,11 +435,22 @@ void TypeCodeGen::processDeferredInstantiations() {
                 // Process arguments in the same order as they appear in the function
                 auto argIt = TheFunction->arg_begin();
                 for (const auto& ArgPair : ProtoArgs) {
+                    // Safety check
+                    if (argIt == TheFunction->arg_end()) {
+                        std::cerr << "Error: Mismatch between prototype args and function args in " << TheFunction->getName().str() << std::endl;
+                        break;
+                    }
+
                     // Set the argument name
                     argIt->setName(ArgPair.first);
 
                     // Create alloca for the argument
                     llvm::AllocaInst *Alloca = codeGen.createEntryBlockAlloca(TheFunction, ArgPair.first, argIt->getType());
+                    if (!Alloca) {
+                        std::cerr << "Error: Failed to create alloca for argument " << ArgPair.first << " in " << TheFunction->getName().str() << std::endl;
+                        ++argIt;
+                        continue;
+                    }
 
                     // Store the argument value in the alloca
                     codeGen.Builder->CreateStore(&*argIt, Alloca);
@@ -516,8 +527,17 @@ void TypeCodeGen::processDeferredInstantiations() {
                 for (const auto& param : constructor->getParams()) paramTypes.push_back(param.second);
 
                 for (size_t j = 0; j < paramNames.size(); ++j, ++argIt) {
+                    if (argIt == func->arg_end()) {
+                        std::cerr << "Error: Mismatch between expected args and function args in constructor " << func->getName().str() << std::endl;
+                        break;
+                    }
+
                     argIt->setName(paramNames[j]);
                     llvm::AllocaInst* alloca = codeGen.createEntryBlockAlloca(func, paramNames[j], argIt->getType());
+                    if (!alloca) {
+                        std::cerr << "Error: Failed to create alloca for parameter " << paramNames[j] << " in " << func->getName().str() << std::endl;
+                        continue;
+                    }
                     codeGen.Builder->CreateStore(&*argIt, alloca);
                     codeGen.addVariable(paramNames[j], alloca);
 

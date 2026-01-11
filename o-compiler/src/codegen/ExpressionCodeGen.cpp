@@ -214,7 +214,26 @@ llvm::Value *ExpressionCodeGen::codegen(VarDeclExprAST &E) {
 
     OType VarType;
     if (E.hasExplicitType()) VarType = E.getExplicitType();
-    else if (E.getInit()) VarType = E.getInit()->getOType();
+    else if (E.getInit()) {
+        VarType = E.getInit()->getOType();
+
+        // Special handling for NewExprAST with generic types
+        // If this is a generic instantiation, update the type to reflect the instantiated type
+        if (auto* newExpr = dynamic_cast<NewExprAST*>(E.getInit())) {
+            if (!newExpr->getGenericArgs().empty() && !newExpr->getClassName().empty()) {
+                // Check if this is a generic struct that needs instantiation
+                if (codeGen.GenericStructRegistry.count(newExpr->getClassName()) > 0) {
+                    // Trigger instantiation to ensure the instantiated type exists
+                    llvm::Type* instantiatedType = codeGen.utilCodeGen->instantiateStruct(newExpr->getClassName(), newExpr->getGenericArgs());
+                    if (instantiatedType) {
+                        // Update the VarType to reflect the instantiated type name
+                        std::string instantiatedName = codeGen.utilCodeGen->mangleGenericName(newExpr->getClassName(), newExpr->getGenericArgs());
+                        VarType = OType(BaseType::Struct, 1, instantiatedName, {}, newExpr->getGenericArgs());
+                    }
+                }
+            }
+        }
+    }
 
     codeGen.addVariableType(E.getName(), VarType);
 

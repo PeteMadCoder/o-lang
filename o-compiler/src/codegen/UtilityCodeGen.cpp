@@ -179,6 +179,11 @@ llvm::Type* UtilityCodeGen::instantiateStruct(const std::string& genericName, co
     }
 
     auto newAST = genericAST->clone(typeMap);
+    if (!newAST) {
+        fprintf(stderr, "Error: Failed to clone generic AST for %s\n", mangledName.c_str());
+        InProgressInstantiations.erase(mangledName);
+        return nullptr;
+    }
     newAST->setName(mangledName);
     newAST->makeConcrete();
 
@@ -390,13 +395,46 @@ llvm::Type* UtilityCodeGen::instantiateStruct(const std::string& genericName, co
 
     // GENERATE PROTOTYPES (Declarations only, no bodies)
     // Generate prototypes for methods of the instantiated struct
+    // Add safety check for newAST validity
+    if (!newAST) {
+        fprintf(stderr, "Error: newAST is null in instantiateStruct for %s\n", mangledName.c_str());
+        InProgressInstantiations.erase(mangledName);
+        return nullptr;
+    }
+
+    // GENERATE PROTOTYPES (Declarations only, no bodies)
+    // Generate prototypes for methods of the instantiated struct
+    // Add safety check for newAST validity
+    if (!newAST) {
+        fprintf(stderr, "Error: newAST is null in instantiateStruct for %s\n", mangledName.c_str());
+        InProgressInstantiations.erase(mangledName);
+        return nullptr;
+    }
+
+    // Iterate directly over the methods without copying
     for (auto& method : newAST->getMethods()) {
+        if (!method) {
+            fprintf(stderr, "Error: null method in instantiateStruct for %s\n", mangledName.c_str());
+            continue;
+        }
+
+        auto proto = method->getPrototype();
+        if (!proto) {
+            fprintf(stderr, "Error: null prototype for method in instantiateStruct for %s\n", mangledName.c_str());
+            continue;
+        }
+
         // Mangle method name: StructName_methodName
-        std::string originalName = method->getPrototype()->getName();
+        std::string originalName = proto->getName();
         std::string mangledMethodName = mangledName + "_" + originalName;
 
         // Create a new prototype with the mangled name
-        auto clonedProto = method->getPrototype()->clone();
+        auto clonedProto = proto->clone();
+        if (!clonedProto) {
+            fprintf(stderr, "Error: failed to clone prototype for method %s in instantiateStruct for %s\n", originalName.c_str(), mangledName.c_str());
+            continue;
+        }
+
         clonedProto->setName(mangledMethodName);
 
         // Inject 'this' parameter as first argument with the instantiated struct type
@@ -404,7 +442,10 @@ llvm::Type* UtilityCodeGen::instantiateStruct(const std::string& genericName, co
 
         // Generate the function declaration (prototype only)
         llvm::Function *TheFunction = codeGen.funcCodeGen->codegen(*clonedProto);
-        if (!TheFunction) continue;
+        if (!TheFunction) {
+            fprintf(stderr, "Error: failed to generate function for method %s in instantiateStruct for %s\n", originalName.c_str(), mangledName.c_str());
+            continue;
+        }
 
         // Register the prototype in the global registry
         std::string MangledName = clonedProto->getName();
@@ -412,7 +453,13 @@ llvm::Type* UtilityCodeGen::instantiateStruct(const std::string& genericName, co
     }
 
     // Generate prototypes for constructors of the instantiated struct
+    // Iterate directly over the constructors without copying
     for (auto& constructor : newAST->getConstructors()) {
+        if (!constructor) {
+            fprintf(stderr, "Error: null constructor in instantiateStruct for %s\n", mangledName.c_str());
+            continue;
+        }
+
         // Create constructor function name: StructName_new[_ArgType...]
         std::string funcName = mangledName + "_new";
 
@@ -436,12 +483,21 @@ llvm::Type* UtilityCodeGen::instantiateStruct(const std::string& genericName, co
             continue;
         }
         llvm::Type* structType = codeGen.StructTypes[mangledName];
+        if (!structType) {
+            fprintf(stderr, "Error: struct type is null for constructor in instantiateStruct for %s\n", mangledName.c_str());
+            continue;
+        }
         paramTypes.push_back(llvm::PointerType::get(structType, 0));
         paramNames.push_back("this");
 
         // 2. Add user parameters
         for (const auto& param : constructor->getParams()) {
-            paramTypes.push_back(getLLVMType(param.second));
+            llvm::Type* paramType = getLLVMType(param.second);
+            if (!paramType) {
+                fprintf(stderr, "Error: failed to get LLVM type for parameter in constructor for %s\n", mangledName.c_str());
+                continue;
+            }
+            paramTypes.push_back(paramType);
             paramNames.push_back(param.first);
         }
 
@@ -463,12 +519,16 @@ llvm::Type* UtilityCodeGen::instantiateStruct(const std::string& genericName, co
         // 2. Add user parameters
         for (size_t i = 0; i < paramOTypes.size(); ++i) {
             // paramNames[0] is 'this', so user params start at 1
-            args.push_back({paramNames[i+1], paramOTypes[i]});
+            if (i + 1 < paramNames.size()) {
+                args.push_back({paramNames[i+1], paramOTypes[i]});
+            }
         }
 
         // Create a temporary prototype just for registration purposes
         auto tempProto = std::make_unique<PrototypeAST>(funcName, args, OType(BaseType::Void));
-        RegisterFunctionProto(std::move(tempProto)); // Register in Global Map
+        if (tempProto) {
+            RegisterFunctionProto(std::move(tempProto)); // Register in Global Map
+        }
     }
 
     // QUEUE FOR LATER (Add to the instantiation queue for deferred body generation)
