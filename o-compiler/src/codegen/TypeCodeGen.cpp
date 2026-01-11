@@ -429,15 +429,26 @@ void TypeCodeGen::processDeferredInstantiations() {
 
                 codeGen.enterScope();
 
-                // Register Args
+                // Register Args - ensure type information is preserved for generic instantiation
                 const auto& ProtoArgs = method->getPrototype()->getArgs();
+
+                // Process arguments in the same order as they appear in the function
+                auto argIt = TheFunction->arg_begin();
                 for (const auto& ArgPair : ProtoArgs) {
+                    // Set the argument name
+                    argIt->setName(ArgPair.first);
+
+                    // Create alloca for the argument
+                    llvm::AllocaInst *Alloca = codeGen.createEntryBlockAlloca(TheFunction, ArgPair.first, argIt->getType());
+
+                    // Store the argument value in the alloca
+                    codeGen.Builder->CreateStore(&*argIt, Alloca);
+
+                    // Register both the variable and its type
+                    codeGen.addVariable(ArgPair.first, Alloca);
                     codeGen.addVariableType(ArgPair.first, ArgPair.second);
-                }
-                for (auto &Arg : TheFunction->args()) {
-                    llvm::AllocaInst *Alloca = codeGen.createEntryBlockAlloca(TheFunction, std::string(Arg.getName()), Arg.getType());
-                    codeGen.Builder->CreateStore(&Arg, Alloca);
-                    codeGen.addVariable(std::string(Arg.getName()), Alloca);
+
+                    ++argIt;
                 }
 
                 // Gen Body
@@ -493,11 +504,16 @@ void TypeCodeGen::processDeferredInstantiations() {
 
                 codeGen.enterScope();
 
-                // Handle Args
+                // Handle Args - preserve type information for generic instantiation
                 auto argIt = func->arg_begin();
                 std::vector<std::string> paramNames;
                 paramNames.push_back("this");
                 for (const auto& param : constructor->getParams()) paramNames.push_back(param.first);
+
+                // Get the parameter types from the prototype
+                std::vector<OType> paramTypes;
+                paramTypes.push_back(OType(BaseType::Struct, 1, Item.MangledName)); // 'this' type
+                for (const auto& param : constructor->getParams()) paramTypes.push_back(param.second);
 
                 for (size_t j = 0; j < paramNames.size(); ++j, ++argIt) {
                     argIt->setName(paramNames[j]);
@@ -505,8 +521,8 @@ void TypeCodeGen::processDeferredInstantiations() {
                     codeGen.Builder->CreateStore(&*argIt, alloca);
                     codeGen.addVariable(paramNames[j], alloca);
 
-                    if (paramNames[j] == "this") {
-                         codeGen.addVariableType("this", OType(BaseType::Struct, 1, Item.MangledName));
+                    if (j < paramTypes.size()) {
+                        codeGen.addVariableType(paramNames[j], paramTypes[j]);
                     }
                 }
 

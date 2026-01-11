@@ -279,29 +279,38 @@ OType AddressOfExprAST::getOType() const {
 
 OType MemberAccessAST::getOType() const {
     if (!GlobalCodeGen) return OType(BaseType::Void);
-    
+
     OType ObjType = Object->getOType();
     if (ObjType.base == BaseType::Struct || (ObjType.isPointer() && ObjType.getPointeeType().base == BaseType::Struct)) {
         // Handle Generics (similar to codegenAddress)
         std::string StructName;
 
         if (ObjType.isPointer()) {
-            StructName = ObjType.getPointeeType().structName;
+            OType pointeeType = ObjType.getPointeeType();
+            StructName = pointeeType.structName;
+
+            // Handle Generics for pointer types
+            if (!pointeeType.genericArgs.empty()) {
+                StructName = GlobalCodeGen->utilCodeGen->mangleGenericName(pointeeType.structName, pointeeType.genericArgs);
+            }
         } else {
             StructName = ObjType.structName;
+
+            // Handle Generics for value types
+            if (!ObjType.genericArgs.empty()) {
+                StructName = GlobalCodeGen->utilCodeGen->mangleGenericName(ObjType.structName, ObjType.genericArgs);
+            }
         }
 
+        // Ensure the struct is properly instantiated if it's generic
         if (!ObjType.genericArgs.empty()) {
-            if (GlobalCodeGen) {
-                StructName = GlobalCodeGen->utilCodeGen->mangleGenericName(StructName, ObjType.genericArgs);
-            }
+            GlobalCodeGen->utilCodeGen->instantiateStruct(ObjType.structName, ObjType.genericArgs);
+            StructName = GlobalCodeGen->utilCodeGen->mangleGenericName(ObjType.structName, ObjType.genericArgs);
         } else if (ObjType.isPointer()) {
-            // For pointer types, check if the pointee type has generic args
             OType pointeeType = ObjType.getPointeeType();
             if (!pointeeType.genericArgs.empty()) {
-                if (GlobalCodeGen) {
-                    StructName = GlobalCodeGen->utilCodeGen->mangleGenericName(pointeeType.structName, pointeeType.genericArgs);
-                }
+                GlobalCodeGen->utilCodeGen->instantiateStruct(pointeeType.structName, pointeeType.genericArgs);
+                StructName = GlobalCodeGen->utilCodeGen->mangleGenericName(pointeeType.structName, pointeeType.genericArgs);
             }
         }
 

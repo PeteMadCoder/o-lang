@@ -617,7 +617,7 @@ llvm::Value *ExpressionCodeGen::codegen(MethodCallExprAST &E) {
     OType ObjType = E.getObject()->getOType();
     std::string StructName = ObjType.structName;
 
-    // Handle generic types
+    // Handle generic types - ensure proper instantiation
     if (!ObjType.genericArgs.empty()) {
         // Trigger instantiation of the generic struct if needed
         codeGen.utilCodeGen->instantiateStruct(ObjType.structName, ObjType.genericArgs);
@@ -625,16 +625,13 @@ llvm::Value *ExpressionCodeGen::codegen(MethodCallExprAST &E) {
     } else if (StructName.empty()) {
         // Check if this might be a variable whose type we need to look up
         if (auto* varExpr = dynamic_cast<VariableExprAST*>(E.getObject())) {
-            llvm::AllocaInst* varAlloca = codeGen.getVariable(varExpr->getName());
-            if (varAlloca) {
-                // Get the stored type for this variable
-                OType storedType = codeGen.getVariableType(varExpr->getName());
-                if (storedType.base == BaseType::Struct) {
-                    StructName = storedType.structName;
-                    if (!storedType.genericArgs.empty()) {
-                        codeGen.utilCodeGen->instantiateStruct(storedType.structName, storedType.genericArgs);
-                        StructName = codeGen.utilCodeGen->mangleGenericName(storedType.structName, storedType.genericArgs);
-                    }
+            // Get the stored type for this variable
+            OType storedType = codeGen.getVariableType(varExpr->getName());
+            if (storedType.base == BaseType::Struct) {
+                StructName = storedType.structName;
+                if (!storedType.genericArgs.empty()) {
+                    codeGen.utilCodeGen->instantiateStruct(storedType.structName, storedType.genericArgs);
+                    StructName = codeGen.utilCodeGen->mangleGenericName(storedType.structName, storedType.genericArgs);
                 }
             }
         }
@@ -657,14 +654,9 @@ llvm::Value *ExpressionCodeGen::codegen(MethodCallExprAST &E) {
         }
     }
 
+    // Ensure the struct name is properly mangled for generic types
     if (!ObjType.genericArgs.empty()) {
-        // Trigger instantiation of the generic struct if needed
-        codeGen.utilCodeGen->instantiateStruct(ObjType.structName, ObjType.genericArgs);
         StructName = codeGen.utilCodeGen->mangleGenericName(ObjType.structName, ObjType.genericArgs);
-    } else {
-        // For non-generic structs, ensure the struct has been processed
-        // Check if the struct exists in the registry, if not, it should have been processed already
-        // But we can try to look up any missing methods in the global registry
     }
 
     std::string MangledName = StructName + "_" + E.getMethodName();
@@ -673,6 +665,18 @@ llvm::Value *ExpressionCodeGen::codegen(MethodCallExprAST &E) {
     // If function not found, try to look it up in the global registry
     if (!CalleeF) {
         CalleeF = codeGen.utilCodeGen->getFunctionFromPrototype(MangledName);
+    }
+
+    // If still not found and we have generic args, try to force instantiation
+    if (!CalleeF && !ObjType.genericArgs.empty()) {
+        // Trigger instantiation to ensure method prototypes are generated
+        codeGen.utilCodeGen->instantiateStruct(ObjType.structName, ObjType.genericArgs);
+
+        // Try again after instantiation
+        CalleeF = codeGen.TheModule->getFunction(MangledName);
+        if (!CalleeF) {
+            CalleeF = codeGen.utilCodeGen->getFunctionFromPrototype(MangledName);
+        }
     }
 
     if (!CalleeF) {
@@ -1737,23 +1741,36 @@ llvm::Value *ExpressionCodeGen::codegenAddress(MemberAccessAST &E) {
     std::string StructName;
 
     if (ObjType.isPointer()) {
-        StructName = ObjType.getPointeeType().structName;
+        OType pointeeType = ObjType.getPointeeType();
+        StructName = pointeeType.structName;
+
+        // Handle Generics for pointer types
+        if (!pointeeType.genericArgs.empty()) {
+            StructName = codeGen.utilCodeGen->mangleGenericName(pointeeType.structName, pointeeType.genericArgs);
+        }
     } else {
         StructName = ObjType.structName;
+
+        // Handle Generics for value types
+        if (!ObjType.genericArgs.empty()) {
+            StructName = codeGen.utilCodeGen->mangleGenericName(ObjType.structName, ObjType.genericArgs);
+        }
     }
 
-    // Handle Generics...
+    // Ensure the struct is properly instantiated if it's generic
     if (!ObjType.genericArgs.empty()) {
-        StructName = codeGen.utilCodeGen->mangleGenericName(StructName, ObjType.genericArgs);
+        codeGen.utilCodeGen->instantiateStruct(ObjType.structName, ObjType.genericArgs);
+        StructName = codeGen.utilCodeGen->mangleGenericName(ObjType.structName, ObjType.genericArgs);
     } else if (ObjType.isPointer()) {
-        // For pointer types, check if the pointee type has generic args
         OType pointeeType = ObjType.getPointeeType();
         if (!pointeeType.genericArgs.empty()) {
+            codeGen.utilCodeGen->instantiateStruct(pointeeType.structName, pointeeType.genericArgs);
             StructName = codeGen.utilCodeGen->mangleGenericName(pointeeType.structName, pointeeType.genericArgs);
         }
     }
 
     if (!TypeRegistry::getInstance().hasStruct(StructName)) {
+        codeGen.logError(("Struct not found in registry: " + StructName).c_str());
         return nullptr;
     }
 
@@ -1767,7 +1784,10 @@ llvm::Value *ExpressionCodeGen::codegenAddress(MemberAccessAST &E) {
         }
     }
 
-    if (FieldIndex == -1) return nullptr;
+    if (FieldIndex == -1) {
+        codeGen.logError(("Field '" + E.getFieldName() + "' not found in struct '" + StructName + "'").c_str());
+        return nullptr;
+    }
 
     // 3. Generate GEP
     llvm::Value *Zero = llvm::ConstantInt::get(llvm::Type::getInt32Ty(*codeGen.TheContext), 0);

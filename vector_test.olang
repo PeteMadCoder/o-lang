@@ -1,0 +1,22 @@
+import "stdlib/std/vector.olang";
+
+fn main() -> int {
+    var vec = new Vector<int>();
+
+    vec.push(10);
+    vec.push(20);
+    vec.push(30);
+
+    var first = vec[0];   // Should be 10
+    var second = vec[1];  // Should be 20
+    var third = vec[2];   // Should be 30
+
+    var size = vec.size(); // Should be 3
+
+    io.println(first);
+    io.println(second);
+    io.println(third);
+    io.println(size);
+
+    return size;  // Return 3
+}
