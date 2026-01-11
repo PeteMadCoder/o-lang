@@ -1,0 +1,5 @@
+fn main() -> int {
+    var x = 2;
+    var result = match (x) { 1 => 10, 2 => 20 };
+    return result;
+}

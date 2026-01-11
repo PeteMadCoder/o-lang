@@ -1,0 +1,8 @@
+fn print_num(x: int) {
+    // No return value
+}
+
+fn main() -> int {
+    print_num(42);
+    return 0;
+}

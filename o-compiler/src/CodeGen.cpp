@@ -268,8 +268,11 @@ llvm::Type* instantiateStruct(const std::string& genericName, const std::vector<
     }
 
     // Create LLVM struct type
-    llvm::StructType* structType = llvm::StructType::create(*TheContext, fieldTypes, mangledName);
+    llvm::StructType* structType = llvm::StructType::create(*TheContext, mangledName);
     StructTypes[mangledName] = structType;
+
+    // Set the body of the struct after all dependencies are resolved
+    structType->setBody(fieldTypes);
 
     // Get Layout for accurate offsets and size
     const llvm::StructLayout *Layout = TheModule->getDataLayout().getStructLayout(structType);
@@ -602,6 +605,12 @@ llvm::Type* getLLVMType(const OType& t) {
             // Slice
             baseType = getSliceType(baseType);
         } else {
+            // Fixed Array - validate size to prevent std::bad_array_new_length
+            if (size < 0) {
+                fprintf(stderr, "Error: Invalid array size %d\n", size);
+                baseType = llvm::Type::getVoidTy(*TheContext);
+                break;
+            }
             // Fixed Array
             baseType = llvm::ArrayType::get(baseType, size);
         }
@@ -1591,7 +1600,18 @@ llvm::Function *FunctionAST::codegen() {
         if (llvm::Value *RetVal = Body->codegen()) {
             // Only insert return if the block is not terminated
             if (!Builder->GetInsertBlock()->getTerminator()) {
-                 Builder->CreateRet(RetVal);
+                if (Proto->getReturnType().base == BaseType::Void) {
+                    Builder->CreateRetVoid();
+                } else {
+                    Builder->CreateRet(RetVal);
+                }
+            }
+            llvm::verifyFunction(*TheFunction);
+            return TheFunction;
+        } else {
+            // Body->codegen() returned nullptr, check if we need to add a return for void functions
+            if (!Builder->GetInsertBlock()->getTerminator() && Proto->getReturnType().base == BaseType::Void) {
+                Builder->CreateRetVoid();
             }
             llvm::verifyFunction(*TheFunction);
             return TheFunction;
@@ -1622,7 +1642,18 @@ llvm::Function *FunctionAST::codegen() {
         if (llvm::Value *RetVal = Body->codegen()) {
             // Only insert return if the block is not terminated
             if (!Builder->GetInsertBlock()->getTerminator()) {
-                 Builder->CreateRet(RetVal);
+                if (Proto->getReturnType().base == BaseType::Void) {
+                    Builder->CreateRetVoid();
+                } else {
+                    Builder->CreateRet(RetVal);
+                }
+            }
+            llvm::verifyFunction(*TheFunction);
+            return TheFunction;
+        } else {
+            // Body->codegen() returned nullptr, check if we need to add a return for void functions
+            if (!Builder->GetInsertBlock()->getTerminator() && Proto->getReturnType().base == BaseType::Void) {
+                Builder->CreateRetVoid();
             }
             llvm::verifyFunction(*TheFunction);
             return TheFunction;

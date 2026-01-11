@@ -45,9 +45,10 @@ int main(int argc, char** argv) {
     // 2. Configure Driver
     CompilerDriver driver;
     // Add default include paths (optional, but good for UX)
-    driver.addIncludePath("."); 
+    driver.addIncludePath(".");
     driver.addIncludePath("tests");
     driver.addIncludePath("o-compiler/tests");
+    driver.addIncludePath("stdlib");
     
     for (const auto& path : IncludePaths) {
         driver.addIncludePath(path);

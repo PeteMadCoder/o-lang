@@ -285,12 +285,45 @@ std::unique_ptr<ExprAST> Parser::ParseNewExpr() {
 }
 
 std::unique_ptr<ExprAST> Parser::ParseArrayTypeExpr() {
-    // This handles parsing array types as expressions: int[10]
-    // We need to backtrack and reparse as array type
-    
-    // For now, this is a placeholder - array types in expressions
-    // would need more sophisticated parsing
-    return nullptr;
+    // Parse base type (int, float, etc.) without array dimensions
+    // This handles array allocation: int[5], float[10], etc.
+    BaseType baseType;
+    switch (curTok.type) {
+        case TokenType::TypeInt:    baseType = BaseType::Int; break;
+        case TokenType::TypeFloat:  baseType = BaseType::Float; break;
+        case TokenType::TypeBool:   baseType = BaseType::Bool; break;
+        case TokenType::TypeChar:   baseType = BaseType::Char; break;
+        case TokenType::TypeByte:   baseType = BaseType::Byte; break;
+        case TokenType::TypeVoid:   baseType = BaseType::Void; break;
+        default:
+            return LogError("Expected primitive type for array allocation");
+    }
+
+    getNextToken(); // eat the type token
+
+    // Now expect opening bracket for size
+    if (curTok.type != TokenType::LBracket) {
+        return LogError("Expected '[' after array type");
+    }
+    getNextToken(); // eat '['
+
+    // Parse the size expression
+    auto sizeExpr = ParseExpression();
+    if (!sizeExpr) {
+        return nullptr;
+    }
+
+    // Expect closing bracket
+    if (curTok.type != TokenType::RBracket) {
+        return LogError("Expected ']' after array size");
+    }
+    getNextToken(); // eat ']'
+
+    // Create the element type
+    OType elementType(baseType);
+
+    // Create array allocation expression
+    return std::make_unique<NewArrayExprAST>(elementType, std::move(sizeExpr));
 }
 
 std::unique_ptr<ExprAST> Parser::ParseArrayInitExpr() {
@@ -446,17 +479,22 @@ std::unique_ptr<ExprAST> Parser::ParseMatchExpr() {
         }
         getNextToken(); // eat '=>'
         
-        // Parse Body (Statement or Block)
-        auto Body = ParseStatement();
+        // Parse Body (Expression - match arms return expressions, not statements)
+        auto Body = ParseExpression();
         if (!Body) return nullptr;
-        
+
         Cases.emplace_back(std::move(Pattern), std::move(Body));
+
+        // Optionally consume comma after case (to allow comma-separated cases)
+        if (curTok.type == TokenType::Comma) {
+            getNextToken(); // eat ','
+        }
     }
-    
+
     if (curTok.type != TokenType::RBrace)
         return LogError("Expected '}' to end match cases");
     getNextToken(); // eat '}'
-    
+
     return std::make_unique<MatchExprAST>(std::move(Cond), std::move(Cases));
 }
 
@@ -473,6 +511,12 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary() {
         case TokenType::Float:      return ParseNumberExpr();
         case TokenType::CharLit:    return ParseCharExpr();
         case TokenType::StringLit:  return ParseStringExpr();
+        case TokenType::TypeInt:
+        case TokenType::TypeFloat:
+        case TokenType::TypeBool:
+        case TokenType::TypeChar:
+        case TokenType::TypeByte:
+        case TokenType::TypeVoid:   return ParseArrayTypeExpr();
         case TokenType::LParen:     return ParseParenExpr();
         case TokenType::LBrace:     return ParseArrayInitExpr();
         default: return LogError("unknown token when expecting an expression");

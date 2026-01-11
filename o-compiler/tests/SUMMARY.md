@@ -25,7 +25,6 @@ This comprehensive test suite evaluates all aspects of the O programming languag
 ❌ **Critical Crashes**: Generic structs cause segmentation faults (`std::bad_alloc`, `std::bad_array_new_length`)\
 ❌ **Syntax Issues**: Match expressions have parsing problems\
 ❌ **Memory Operations**: Array allocation syntax may be incorrect\
-❌ **Pointer Operations**: Need to be in unsafe blocks\
 ❌ **Standard Library**: Import paths need adjustment\
 ❌ **Function Definitions**: Functions without return statements in main context\
 
