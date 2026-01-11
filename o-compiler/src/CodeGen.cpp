@@ -1297,7 +1297,18 @@ llvm::Value *MethodCallExprAST::codegen() {
     llvm::Value *ThisPtr = nullptr;
     if (!isStaticMethod) {
         // 2. Prepare 'this' pointer for instance methods
-        if (ObjType.isPointer()) {
+        if (ObjType.base == BaseType::Void) {
+             // This is a static invocation of an instance method (Struct.method())
+             // Pass a NULL pointer as 'this'
+             if (StructTypes.find(StructName) != StructTypes.end()) {
+                 llvm::Type* structType = StructTypes[StructName];
+                 // Create opaque pointer to null
+                 ThisPtr = llvm::ConstantPointerNull::get(llvm::PointerType::get(*TheContext, 0)); 
+             } else {
+                 LogError(("Unknown struct type: " + StructName).c_str());
+                 return nullptr;
+             }
+        } else if (ObjType.isPointer()) {
             ThisPtr = Object->codegen();
         } else {
             ThisPtr = Object->codegenAddress();
