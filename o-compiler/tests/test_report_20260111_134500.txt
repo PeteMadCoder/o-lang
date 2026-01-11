@@ -1,0 +1,53 @@
+O Language Compiler Comprehensive Test Suite
+Run Date: Sun Jan 11 01:45:00 PM WET 2026
+========================================
+RUN  basic_helloworld: Simple main function
+PASS basic_helloworld: Expected 'success', got 'success'
+RUN  basic_vars: Variable declarations
+PASS basic_vars: Expected 'success', got 'success'
+RUN  basic_types: Type annotations
+PASS basic_types: Expected 'success', got 'success'
+RUN  basic_arith: Arithmetic operations
+PASS basic_arith: Expected 'success', got 'success'
+RUN  basic_bool: Boolean operations
+PASS basic_bool: Expected 'success', got 'success'
+RUN  func_simple: Simple function
+PASS func_simple: Expected 'success', got 'success'
+RUN  func_multi: Multiple parameters
+PASS func_multi: Expected 'success', got 'success'
+RUN  func_void: Function with no return value
+PASS func_void: Expected 'success', got 'success'
+RUN  ctrl_if: If statement
+PASS ctrl_if: Expected 'success', got 'success'
+RUN  ctrl_while: While loop
+PASS ctrl_while: Expected 'success', got 'success'
+RUN  ctrl_for: For loop
+PASS ctrl_for: Expected 'success', got 'success'
+RUN  ctrl_match: Match expression
+PASS ctrl_match: Expected 'success', got 'success'
+RUN  struct_simple: Simple struct with constructor
+PASS struct_simple: Expected 'success', got 'success'
+RUN  struct_nested: Nested structs
+PASS struct_nested: Expected 'success', got 'success'
+RUN  mem_array: Array allocation
+PASS mem_array: Expected 'success', got 'success'
+RUN  mem_pointer: Pointer operations (should fail outside unsafe blocks - security feature)
+PASS mem_pointer: Expected 'failure', got 'failure'
+RUN  mem_unsafe: Unsafe block
+PASS mem_unsafe: Expected 'success', got 'success'
+RUN  gen_simple: Simple generic
+FAIL gen_simple: Expected 'success', got 'failure'
+RUN  gen_multi: Multi-parameter generic
+FAIL gen_multi: Expected 'success', got 'failure'
+RUN  op_overload: Operator overload
+PASS op_overload: Expected 'success', got 'success'
+RUN  stdlib_import: Import statement
+PASS stdlib_import: Expected 'success', got 'success'
+RUN  error_syntax: Invalid syntax should fail
+PASS error_syntax: Expected 'failure', got 'failure'
+RUN  error_undeclared: Undeclared variable should fail
+PASS error_undeclared: Expected 'failure', got 'failure'
+RUN  adv_recursion: Recursive function
+PASS adv_recursion: Expected 'success', got 'success'
+RUN  adv_string: String module (known to fail)
+PASS adv_string: Expected 'failure', got 'failure'

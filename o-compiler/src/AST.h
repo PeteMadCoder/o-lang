@@ -757,3 +757,6 @@ inline std::unique_ptr<ClassDeclAST> ClassDeclAST::clone(const std::map<std::str
 // Forward declaration for the global registry functions
 void RegisterFunctionProto(std::unique_ptr<PrototypeAST> Proto);
 llvm::Function *GetFunctionFromPrototype(std::string Name);
+
+// Deferred Instantiation Processing
+void processDeferredInstantiations();
