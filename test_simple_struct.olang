@@ -1,0 +1,16 @@
+struct SimpleBox {
+    value: int;
+
+    new(val: int) {
+        this.value = val;
+    }
+
+    fn get_value() -> int {
+        return this.value;
+    }
+}
+
+fn main() -> int {
+    var box = new SimpleBox(42);
+    return box.get_value();
+}

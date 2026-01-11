@@ -1,6 +1,0 @@
-import "std/io.olang";
-
-fn main() -> int {
-    IO.print_int(42);
-    return 0;
-}

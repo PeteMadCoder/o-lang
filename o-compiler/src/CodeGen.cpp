@@ -247,8 +247,14 @@ llvm::Type* instantiateStruct(const std::string& genericName, const std::vector<
         // Validate the substituted field type before processing
         bool hasInvalidArraySize = false;
         for (int arraySize : substitutedFieldType.arraySizes) {
-            if (arraySize < -1 || arraySize == 0) {  // -1 is valid for slices
+            if (arraySize < 0 || arraySize == 0) {  // Both negative and zero are invalid for fixed arrays
                 fprintf(stderr, "Warning: Invalid array size %d in field type, skipping field\n", arraySize);
+                hasInvalidArraySize = true;
+                break;
+            }
+            // Also check for extremely large array sizes
+            if (arraySize > 100000000) {  // 100 million - very conservative limit
+                fprintf(stderr, "Warning: Array size %d is extremely large, skipping field\n", arraySize);
                 hasInvalidArraySize = true;
                 break;
             }
@@ -262,6 +268,14 @@ llvm::Type* instantiateStruct(const std::string& genericName, const std::vector<
         if (!fieldType) {
             // If we can't get the LLVM type, try instantiating dependent generic types first
             if (substitutedFieldType.base == BaseType::Struct && !substitutedFieldType.genericArgs.empty()) {
+                // Check for potential infinite recursion
+                std::string depMangledName = mangleGenericName(substitutedFieldType.structName, substitutedFieldType.genericArgs);
+                if (InProgressInstantiations.count(depMangledName)) {
+                    fprintf(stderr, "Error: Circular dependency detected in generic instantiation: %s\n", depMangledName.c_str());
+                    InProgressInstantiations.erase(mangledName);
+                    return nullptr;
+                }
+
                 llvm::Type* depType = instantiateStruct(substitutedFieldType.structName, substitutedFieldType.genericArgs);
                 if (depType) {
                     fieldType = getLLVMType(substitutedFieldType);
@@ -271,6 +285,12 @@ llvm::Type* instantiateStruct(const std::string& genericName, const std::vector<
                 fprintf(stderr, "Error: Could not get LLVM type for field %s in struct %s, skipping\n", field.first.c_str(), mangledName.c_str());
                 continue; // Error
             }
+        }
+
+        // Additional validation: make sure fieldType is valid before adding to vector
+        if (!fieldType) {
+            fprintf(stderr, "Error: fieldType is null for field %s in struct %s, skipping\n", field.first.c_str(), mangledName.c_str());
+            continue;
         }
 
         fieldTypes.push_back(fieldType);
@@ -303,6 +323,13 @@ llvm::Type* instantiateStruct(const std::string& genericName, const std::vector<
 
     if (hasInvalidType) {
         fprintf(stderr, "Error: Invalid field types found, skipping struct body for %s\n", mangledName.c_str());
+        InProgressInstantiations.erase(mangledName);
+        return nullptr;
+    }
+
+    // Additional validation: check for extremely large number of fields
+    if (fieldTypes.size() > 10000) {
+        fprintf(stderr, "Error: Too many fields (%zu) in struct %s, likely a recursion issue\n", fieldTypes.size(), mangledName.c_str());
         InProgressInstantiations.erase(mangledName);
         return nullptr;
     }
@@ -652,17 +679,20 @@ llvm::Type* getLLVMType(const OType& t) {
                 fprintf(stderr, "Warning: Creating array with size 0, using size 1\n");
                 size = 1; // Use minimum size to prevent std::bad_array_new_length
             }
-            // Check for extremely large array sizes that could cause allocation issues
-            if (size > 1000000) {
-                fprintf(stderr, "Warning: Array size %d is extremely large, using size 1000000\n", size);
-                size = 1000000;
-            }
             // Additional safety check: make sure size is not too large to cause allocation issues
-            if (size > 1000000000) {  // 1 billion - very conservative limit
-                fprintf(stderr, "Error: Array size %d is too large, using void type\n", size);
+            if (size > 100000000) {  // More conservative limit
+                fprintf(stderr, "Error: Array size %d is too large (> 100M), using void type\n", size);
                 baseType = llvm::Type::getVoidTy(*TheContext);
                 break;
             }
+
+            // Check if baseType is valid before creating array
+            if (!baseType) {
+                fprintf(stderr, "Error: Invalid base type when creating array\n");
+                baseType = llvm::Type::getVoidTy(*TheContext);
+                break;
+            }
+
             // Fixed Array
             try {
                 baseType = llvm::ArrayType::get(baseType, size);
@@ -3208,4 +3238,45 @@ llvm::Value *ArrayInitExprAST::codegen() {
     }
     
     return Builder->CreateLoad(ArrayType, ArrayAlloca, "arrayinit");
+}
+
+llvm::Value *ArrayLiteralExprAST::codegen() {
+    // Create a fixed-size array on the stack
+    llvm::Type *ElementType = getLLVMType(this->ElementType);
+    if (!ElementType) {
+        LogError("Could not determine element type for array literal");
+        return nullptr;
+    }
+
+    // Create array type with the specified size
+    llvm::ArrayType *ArrayType = llvm::ArrayType::get(ElementType, this->Size);
+
+    // Allocate array on stack in the entry block
+    llvm::Function *TheFunction = Builder->GetInsertBlock()->getParent();
+    llvm::AllocaInst *ArrayAlloca = CreateEntryBlockAlloca(TheFunction, "fixed_array", ArrayType);
+
+    // Initialize all elements to zero/default value
+    for (int i = 0; i < this->Size; ++i) {
+        llvm::Value *Idx = llvm::ConstantInt::get(*TheContext, llvm::APInt(32, 0));
+        llvm::Value *Idx2 = llvm::ConstantInt::get(*TheContext, llvm::APInt(32, i));
+        llvm::Value *ElementPtr = Builder->CreateInBoundsGEP(ArrayType, ArrayAlloca, {Idx, Idx2});
+
+        // Create default value based on element type
+        llvm::Value *DefaultValue;
+        if (ElementType->isIntegerTy()) {
+            DefaultValue = llvm::ConstantInt::get(ElementType, 0);
+        } else if (ElementType->isDoubleTy()) {
+            DefaultValue = llvm::ConstantFP::get(*TheContext, llvm::APFloat(0.0));
+        } else if (ElementType->isFloatTy()) {
+            DefaultValue = llvm::ConstantFP::get(*TheContext, llvm::APFloat(0.0f));
+        } else if (ElementType->isPointerTy()) {
+            DefaultValue = llvm::ConstantPointerNull::get(static_cast<llvm::PointerType*>(ElementType));
+        } else {
+            DefaultValue = llvm::UndefValue::get(ElementType);
+        }
+
+        Builder->CreateStore(DefaultValue, ElementPtr);
+    }
+
+    return ArrayAlloca; // Return pointer to the array
 }
