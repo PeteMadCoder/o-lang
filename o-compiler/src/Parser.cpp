@@ -48,7 +48,7 @@ int Parser::GetTokPrecedence() {
     // Logical operators (lowest precedence)
     if (curTok.type == TokenType::LogicalOr) return 5;
     if (curTok.type == TokenType::LogicalAnd) return 6;
-    
+
     // Comparison operators
     if (curTok.type == TokenType::EqualEqual) return 10;
     if (curTok.type == TokenType::NotEqual) return 10;
@@ -56,14 +56,17 @@ int Parser::GetTokPrecedence() {
     if (curTok.type == TokenType::Greater) return 10;
     if (curTok.type == TokenType::LessEqual) return 10;
     if (curTok.type == TokenType::GreaterEqual) return 10;
-    
+
     // Arithmetic operators
     if (curTok.type == TokenType::Plus) return 20;
     if (curTok.type == TokenType::Minus) return 20;
     if (curTok.type == TokenType::Star) return 40;
     if (curTok.type == TokenType::Slash) return 40;
     if (curTok.type == TokenType::Mod) return 40;
-    
+
+    // Cast operator (higher precedence than arithmetic)
+    if (curTok.type == TokenType::As) return 35;
+
     return -1;
 }
 
@@ -624,7 +627,22 @@ std::unique_ptr<ExprAST> Parser::ParseBinOpRHS(int ExprPrec, std::unique_ptr<Exp
         if (TokPrec < ExprPrec)
             return LHS;
 
-        char BinOp = curTok.text[0]; 
+        // --- HANDLE CASTING SPECIAL CASE ---
+        if (curTok.type == TokenType::As) {
+            getNextToken(); // Eat 'as'
+
+            // Parse the TARGET TYPE (e.g., 'int', '*float')
+            OType DestType = ParseType();
+
+            // Create the Cast Node
+            LHS = std::make_unique<CastExprAST>(std::move(LHS), DestType);
+
+            // Casting binds tightly, continue loop to see if there's more (e.g., '+')
+            continue;
+        }
+        // -----------------------------------
+
+        char BinOp = curTok.text[0];
         std::string BinOpStr = curTok.text; // Store full operator string
         getNextToken(); // eat binop
 

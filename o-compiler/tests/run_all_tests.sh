@@ -510,6 +510,25 @@ run_should_pass_test "adv_recursion" "$TEMP_DIR/advanced/recursion.olang" "Recur
 # This test is expected to fail due to the known String module issue
 run_test "adv_string" "$TEMP_DIR/advanced/string_module.olang" "failure" "String module (known to fail)"
 
+# Create casting test
+cat > "$TEMP_DIR/advanced/casting_test.olang" << 'EOF'
+import "std/io.olang";
+
+fn main() -> int {
+    // Test basic casting int to float and back
+    var int_val: int = 100;
+    var float_val = int_val as float;
+    var back_to_int = float_val as int;
+
+    print_int(back_to_int);
+    println("");
+
+    return 0;
+}
+EOF
+
+run_should_pass_test "adv_casting" "$TEMP_DIR/advanced/casting_test.olang" "Casting operator (as)"
+
 # Clean up temporary directory
 rm -rf "$TEMP_DIR"
 

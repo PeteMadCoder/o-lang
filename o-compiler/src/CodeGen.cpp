@@ -871,6 +871,54 @@ llvm::Value *StringExprAST::codegen() {
     );
 }
 
+llvm::Value *CastExprAST::codegen() {
+    llvm::Value *Val = Operand->codegen();
+    if (!Val) return nullptr;
+
+    OType SrcType = Operand->getOType();
+
+    // Get LLVM Types
+    llvm::Type *DestLLVMType = getLLVMType(TargetType);
+    llvm::Type *SrcLLVMType = Val->getType();
+
+    // 1. Same Type? No-op.
+    if (SrcLLVMType == DestLLVMType) return Val;
+
+    // 2. Int <-> Float
+    if (SrcLLVMType->isIntegerTy() && DestLLVMType->isFloatingPointTy()) {
+        return Builder->CreateSIToFP(Val, DestLLVMType, "cast_si_fp");
+    }
+    if (SrcLLVMType->isFloatingPointTy() && DestLLVMType->isIntegerTy()) {
+        return Builder->CreateFPToSI(Val, DestLLVMType, "cast_fp_si");
+    }
+
+    // 3. Pointer <-> Pointer (Bitcast)
+    if (SrcLLVMType->isPointerTy() && DestLLVMType->isPointerTy()) {
+        // In Opaque Pointers, this is a no-op instruction, but necessary for semantic correctness
+        return Builder->CreateBitCast(Val, DestLLVMType, "cast_ptr");
+    }
+
+    // 4. Pointer <-> Int (Address Manipulation)
+    if (SrcLLVMType->isPointerTy() && DestLLVMType->isIntegerTy()) {
+        return Builder->CreatePtrToInt(Val, DestLLVMType, "cast_ptr_int");
+    }
+    if (SrcLLVMType->isIntegerTy() && DestLLVMType->isPointerTy()) {
+        return Builder->CreateIntToPtr(Val, DestLLVMType, "cast_int_ptr");
+    }
+
+    // 5. Int <-> Int (Resize)
+    if (SrcLLVMType->isIntegerTy() && DestLLVMType->isIntegerTy()) {
+        if (SrcLLVMType->getIntegerBitWidth() < DestLLVMType->getIntegerBitWidth()) {
+            return Builder->CreateZExt(Val, DestLLVMType, "cast_zext"); // or SExt
+        } else {
+            return Builder->CreateTrunc(Val, DestLLVMType, "cast_trunc");
+        }
+    }
+
+    LogError("Unsupported cast operation");
+    return nullptr;
+}
+
 llvm::Value *NumberExprAST::codegen() {
     if (Type.base == BaseType::Float) {
         return llvm::ConstantFP::get(*TheContext, llvm::APFloat(Val));

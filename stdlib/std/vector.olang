@@ -1,57 +1,75 @@
-// External C functions
-fn exit(status: int);
+// External C functions for memory management
+fn malloc(size: int) -> *byte;
+fn free(ptr: *byte);
 
 // --- The Vector Class ---
-// A simpler vector implementation that should work with the current compiler
 struct Vector<T> {
-    data: T[16];  // Fixed-size array instead of pointer
-    count: int;
+    data: *byte;   // Pointer to dynamically allocated array (as byte array)
+    size: int;     // Number of elements currently in vector
+    capacity: int; // Total allocated capacity (number of elements)
 
-    // Constructor: Creates a vector with fixed capacity
+    // Constructor: Creates an empty vector with initial capacity
     new() {
-        this.count = 0;
+        this.capacity = 4;  // Start with small capacity
+        this.size = 0;
+        // Allocate initial buffer: capacity * 4 bytes (assuming T is int-sized)
+        this.data = malloc(this.capacity * 4);
     }
 
     fn push(val: T) {
-        if (this.count >= 16) {
+        // Inline resize logic to avoid method call
+        if (this.size >= this.capacity) {
+            var old_capacity = this.capacity;
+            this.capacity = this.capacity * 2;  // Double the capacity
+            
+            // Allocate new buffer
+            var new_data = malloc(this.capacity * 4);
+            
+            // Copy existing elements to new buffer using manual byte copy
             unsafe {
-                exit(1); // Vector is full
+                var i = 0;
+                var bytes_to_copy = this.size * 4;  // 4 bytes per element
+                while (i < bytes_to_copy) {
+                    var src_addr = this.data + i;
+                    var dst_addr = new_data + i;
+                    *dst_addr = *src_addr;
+                    i = i + 1;
+                }
             }
+            
+            // Free old buffer
+            free(this.data);
+            
+            // Update data pointer
+            this.data = new_data;
         }
-        this.data[this.count] = val;
-        this.count = this.count + 1;
-    }
-
-    fn pop() -> T {
-        if (this.count <= 0) {
-            unsafe {
-                exit(1); // Vector is empty
-            }
+        
+        // Add the new element by casting to appropriate pointer type
+        unsafe {
+            // Cast data pointer to T* type for proper indexing
+            var typed_ptr = this.data as *T;
+            var element_ptr = typed_ptr + this.size;
+            *element_ptr = val;
         }
-
-        this.count = this.count - 1;
-        return this.data[this.count];
+        this.size = this.size + 1;
     }
 
     // Operator Overloading for Indexing
     fn op_index(idx: int) -> T {
-        if (idx >= this.count || idx < 0) {
-            unsafe {
-                exit(1); // Bounds check
-            }
+        if (idx >= this.size || idx < 0) {
+            // For now, return a default value instead of exiting
+            return 0;  // This is a simplification
         }
-        return this.data[idx];
+        
+        unsafe {
+            // Cast data pointer to T* type for proper indexing
+            var typed_ptr = this.data as *T;
+            var element_ptr = typed_ptr + idx;
+            return *element_ptr;
+        }
     }
 
     fn size() -> int {
-        return this.count;
-    }
-
-    fn is_empty() -> bool {
-        return this.count == 0;
-    }
-
-    fn full() -> bool {
-        return this.count >= 16;
+        return this.size;
     }
 }

@@ -1,0 +1,32 @@
+import "std/io.olang";
+
+fn main() -> int {
+    // Test basic casting
+    var x: int = 42;
+    var ptr = &x;
+    var byte_ptr = ptr as *byte;
+    
+    print_int(x);
+    println("");
+    
+    // Test casting int to float and back
+    var int_val: int = 100;
+    var float_val = int_val as float;
+    var back_to_int = float_val as int;
+    
+    print_int(back_to_int);
+    println("");
+    
+    // Test casting pointer to int and back
+    var addr = ptr as int;
+    var recovered_ptr = addr as *int;
+    var dereferenced = 0;
+    unsafe {
+        dereferenced = *recovered_ptr;
+    }
+
+    print_int(dereferenced);
+    println("");
+    
+    return 0;
+}

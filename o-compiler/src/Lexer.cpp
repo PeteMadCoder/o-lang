@@ -13,7 +13,8 @@ static std::unordered_map<std::string, TokenType> keywords = {
     {"int", TokenType::TypeInt}, {"float", TokenType::TypeFloat},
     {"bool", TokenType::TypeBool}, {"void", TokenType::TypeVoid},
     {"char", TokenType::TypeChar}, {"byte", TokenType::TypeByte},
-    {"true", TokenType::True}, {"false", TokenType::False}, {"let", TokenType::Let}
+    {"true", TokenType::True}, {"false", TokenType::False}, {"let", TokenType::Let},
+    {"as", TokenType::As}
 };
 
 Lexer::Lexer(const std::string& source) : src(source) {}

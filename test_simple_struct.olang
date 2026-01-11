@@ -1,16 +1,33 @@
-struct SimpleBox {
+import "std/io.olang";
+
+struct SimpleContainer {
     value: int;
-
-    new(val: int) {
-        this.value = val;
+    
+    new(initial_value: int) {
+        this.value = initial_value;
     }
-
+    
     fn get_value() -> int {
         return this.value;
+    }
+    
+    fn set_value(new_val: int) {
+        this.value = new_val;
     }
 }
 
 fn main() -> int {
-    var box = new SimpleBox(42);
-    return box.get_value();
+    var container = new SimpleContainer(100);
+    
+    var val = container.get_value();
+    print_int(val);
+    println("");
+    
+    container.set_value(200);
+    
+    var new_val = container.get_value();
+    print_int(new_val);
+    println("");
+    
+    return 0;
 }

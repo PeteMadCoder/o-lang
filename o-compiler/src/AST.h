@@ -754,6 +754,22 @@ inline std::unique_ptr<ClassDeclAST> ClassDeclAST::clone(const std::map<std::str
     return std::make_unique<ClassDeclAST>(Name, ParentName, IsOpen, NewFields, std::move(NewMethods), std::move(NewConstructors), VirtualMethods);
 }
 
+/// CastExprAST - Expression class for explicit casting (expr as Type)
+class CastExprAST : public ExprAST {
+    std::unique_ptr<ExprAST> Operand;
+    OType TargetType;
+public:
+    CastExprAST(std::unique_ptr<ExprAST> Operand, OType TargetType)
+        : Operand(std::move(Operand)), TargetType(TargetType) {}
+
+    llvm::Value *codegen() override;
+    OType getOType() const override { return TargetType; }
+
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
+        return std::make_unique<CastExprAST>(Operand->clone(typeMap), TargetType.substitute(typeMap));
+    }
+};
+
 // Forward declaration for the global registry functions
 void RegisterFunctionProto(std::unique_ptr<PrototypeAST> Proto);
 llvm::Function *GetFunctionFromPrototype(std::string Name);

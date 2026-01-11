@@ -1,0 +1,22 @@
+// Test to isolate method calls within methods in generics
+struct SimpleGeneric<T> {
+    value: int;
+
+    new() {
+        this.value = 0;
+    }
+
+    fn helper() -> int {
+        return 42;
+    }
+
+    fn test_method_call() -> int {
+        return this.helper();  // This is the problematic line
+    }
+}
+
+fn main() -> int {
+    var obj = new SimpleGeneric<int>();
+    var result = obj.test_method_call();
+    return result;
+}
