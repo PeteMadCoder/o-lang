@@ -251,6 +251,31 @@ OType MethodCallExprAST::getOType() const {
 
     std::string MangledName = StructName + "_" + MethodName;
     if (GlobalCodeGen->FunctionReturnTypes.count(MangledName)) return GlobalCodeGen->FunctionReturnTypes.at(MangledName);
+
+    // If not found, try with corrected method name (workaround for method name mangling issue)
+    std::string correctedMethodName = MethodName;
+    if (MethodName.length() > 4) { // At least "int_"
+        // Check if it starts with a common type name followed by "_"
+        if (MethodName.substr(0, 4) == "int_") {
+            correctedMethodName = MethodName.substr(4); // Remove "int_"
+        } else if (MethodName.substr(0, 5) == "bool_") {
+            correctedMethodName = MethodName.substr(5); // Remove "bool_"
+        } else if (MethodName.substr(0, 6) == "float_") {
+            correctedMethodName = MethodName.substr(6); // Remove "float_"
+        } else if (MethodName.substr(0, 5) == "char_") {
+            correctedMethodName = MethodName.substr(5); // Remove "char_"
+        } else if (MethodName.substr(0, 5) == "byte_") {
+            correctedMethodName = MethodName.substr(5); // Remove "byte_"
+        }
+    }
+
+    // If we corrected the method name, try looking up with the corrected name
+    if (correctedMethodName != MethodName) {
+        std::string correctedMangledName = StructName + "_" + correctedMethodName;
+        if (GlobalCodeGen->FunctionReturnTypes.count(correctedMangledName))
+            return GlobalCodeGen->FunctionReturnTypes.at(correctedMangledName);
+    }
+
     return OType(BaseType::Void);
 }
 

@@ -426,7 +426,26 @@ llvm::Type* UtilityCodeGen::instantiateStruct(const std::string& genericName, co
 
         // Mangle method name: StructName_methodName
         std::string originalName = proto->getName();
-        std::string mangledMethodName = mangledName + "_" + originalName;
+
+        // Check if the method name looks like it includes type info (e.g., "int_get" instead of "get")
+        // Try to extract the actual method name by removing potential type prefixes
+        std::string correctedOriginalName = originalName;
+        if (originalName.length() > 4) { // At least "int_"
+            // Check if it starts with a common type name followed by "_"
+            if (originalName.substr(0, 4) == "int_") {
+                correctedOriginalName = originalName.substr(4); // Remove "int_"
+            } else if (originalName.substr(0, 5) == "bool_") {
+                correctedOriginalName = originalName.substr(5); // Remove "bool_"
+            } else if (originalName.substr(0, 6) == "float_") {
+                correctedOriginalName = originalName.substr(6); // Remove "float_"
+            } else if (originalName.substr(0, 5) == "char_") {
+                correctedOriginalName = originalName.substr(5); // Remove "char_"
+            } else if (originalName.substr(0, 5) == "byte_") {
+                correctedOriginalName = originalName.substr(5); // Remove "byte_"
+            }
+        }
+
+        std::string mangledMethodName = mangledName + "_" + correctedOriginalName;
 
         // Create a new prototype with the mangled name
         auto clonedProto = proto->clone();
@@ -450,6 +469,63 @@ llvm::Type* UtilityCodeGen::instantiateStruct(const std::string& genericName, co
         // Register the prototype in the global registry
         std::string MangledName = clonedProto->getName();
         RegisterFunctionProto(std::move(clonedProto)); // Register in Global Map
+
+        // Also inject 'this' parameter into the original method prototype in the AST
+        // This is needed for deferred processing
+        if (method && method->getPrototype()) {
+            method->getPrototype()->injectThisParameter(mangledName);
+        }
+
+        // Additionally, make sure the method name in the AST is corrected for consistency
+        if (method && method->getPrototype()) {
+            std::string astMethodName = method->getPrototype()->getName();
+            std::string correctedAstName = astMethodName;
+            if (astMethodName.length() > 4) {
+                if (astMethodName.substr(0, 4) == "int_") {
+                    correctedAstName = astMethodName.substr(4);
+                } else if (astMethodName.substr(0, 5) == "bool_") {
+                    correctedAstName = astMethodName.substr(5);
+                } else if (astMethodName.substr(0, 6) == "float_") {
+                    correctedAstName = astMethodName.substr(6);
+                } else if (astMethodName.substr(0, 5) == "char_") {
+                    correctedAstName = astMethodName.substr(5);
+                } else if (astMethodName.substr(0, 5) == "byte_") {
+                    correctedAstName = astMethodName.substr(5);
+                }
+            }
+            if (correctedAstName != astMethodName) {
+                method->getPrototype()->setName(correctedAstName);
+            }
+        }
+    }
+
+    // Fix method names in the AST to ensure they match the corrected names
+    // This is important for deferred processing later
+    for (auto& method : newAST->getMethods()) {
+        if (method && method->getPrototype()) {
+            std::string originalName = method->getPrototype()->getName();
+            std::string correctedName = originalName;
+
+            // Apply the same correction logic used above
+            if (originalName.length() > 4) { // At least "int_"
+                if (originalName.substr(0, 4) == "int_") {
+                    correctedName = originalName.substr(4); // Remove "int_"
+                } else if (originalName.substr(0, 5) == "bool_") {
+                    correctedName = originalName.substr(5); // Remove "bool_"
+                } else if (originalName.substr(0, 6) == "float_") {
+                    correctedName = originalName.substr(6); // Remove "float_"
+                } else if (originalName.substr(0, 5) == "char_") {
+                    correctedName = originalName.substr(5); // Remove "char_"
+                } else if (originalName.substr(0, 5) == "byte_") {
+                    correctedName = originalName.substr(5); // Remove "byte_"
+                }
+            }
+
+            // Only update if the name was actually corrected
+            if (correctedName != originalName) {
+                method->getPrototype()->setName(correctedName);
+            }
+        }
     }
 
     // Generate prototypes for constructors of the instantiated struct
