@@ -630,7 +630,7 @@ llvm::Value *ExpressionCodeGen::codegen(CallExprAST &E) {
         ArgsV.push_back(ArgVal);
     }
 
-    return codeGen.Builder->CreateCall(CalleeF, ArgsV, "calltmp");
+    return codeGen.Builder->CreateCall(CalleeF->getFunctionType(), CalleeF, ArgsV, "calltmp");
 }
 
 llvm::Value *ExpressionCodeGen::codegen(MethodCallExprAST &E) {

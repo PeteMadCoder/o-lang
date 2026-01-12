@@ -390,6 +390,17 @@ void TypeCodeGen::processDeferredInstantiations() {
     // pushes new items, it pushes to the global queue (for the next iteration)
     // without invalidating the reference to the item we are currently processing.
 
+    // --- SAVE CONTEXT ---
+    // We must save the current insertion point because this function might be called
+    // recursively or from within an expression codegen (e.g., NewExprAST).
+    // Failing to restore it will leave the Builder in a detached state, causing
+    // segfaults when the caller tries to continue generating code.
+    llvm::BasicBlock *OldBlock = codeGen.Builder->GetInsertBlock();
+    llvm::BasicBlock::iterator OldPoint;
+    if (OldBlock) {
+        OldPoint = codeGen.Builder->GetInsertPoint();
+    }
+
     while (!codeGen.utilCodeGen->getInstantiationQueue().empty()) {
         // 1. Move all pending items to a local batch
         std::vector<PendingInstantiation> CurrentBatch;
@@ -490,6 +501,7 @@ void TypeCodeGen::processDeferredInstantiations() {
 
             // --- GENERATE CONSTRUCTORS ---
             for (auto& constructor : Item.AST->getConstructors()) {
+                // ... (existing constructor loop) ...
                 std::cerr << "  Generating constructor for " << Item.MangledName << "\n";
                 std::string funcName = Item.MangledName + "_new";
                 // Re-mangle if needed (simple check)
@@ -603,5 +615,16 @@ void TypeCodeGen::processDeferredInstantiations() {
                 llvm::verifyFunction(*func);
             }
         }
+    }
+
+    // --- RESTORE CONTEXT ---
+    if (OldBlock) {
+        if (OldPoint != OldBlock->end()) {
+             codeGen.Builder->SetInsertPoint(OldBlock, OldPoint);
+        } else {
+             codeGen.Builder->SetInsertPoint(OldBlock);
+        }
+    } else {
+        codeGen.Builder->ClearInsertionPoint();
     }
 }
