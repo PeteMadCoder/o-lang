@@ -388,17 +388,14 @@ void TypeCodeGen::processDeferredInstantiations() {
     // 0. Ensure all external function prototypes are declared in the module
     // This fixes the "Lazy Declaration Instability" where functions imported but not used
     // in main() might be missing or incomplete when needed by deferred instantiations.
-    std::cerr << "--- Restoring External Functions ---\n";
     for (const auto& entry : codeGen.GlobalFunctionProtos) {
         if (!codeGen.TheModule->getFunction(entry.first)) {
-            std::cerr << "Restoring function declaration: " << entry.first << "\n";
             // Force creation of the function declaration in the current module
             if (entry.second) {
                 codeGen.funcCodeGen->codegen(*entry.second);
             }
         }
     }
-    std::cerr << "--- End Restoration ---\n";
 
     // Process in batches.
     // We swap the global queue into a local vector so that if 'instantiateStruct'
