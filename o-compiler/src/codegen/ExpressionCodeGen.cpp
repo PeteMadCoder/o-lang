@@ -562,11 +562,31 @@ llvm::Value *ExpressionCodeGen::codegen(CallExprAST &E) {
         llvm::Value *ArgVal = codegen(*E.getArgs()[i]);
         if (!ArgVal) return nullptr;
 
-        // Implicit Cast: Fixed Array -> Slice
-        // Param Type
+        // Explicitly cast argument to match parameter type
         llvm::Type *ParamType = CalleeF->getArg(i)->getType();
         llvm::Type *ArgType = ArgVal->getType();
 
+        if (ArgType != ParamType) {
+            if (ParamType->isIntegerTy() && ArgType->isIntegerTy()) {
+                // Integer Cast
+                if (ArgType->getIntegerBitWidth() < ParamType->getIntegerBitWidth()) {
+                    ArgVal = codeGen.Builder->CreateZExt(ArgVal, ParamType, "arg_zext");
+                } else {
+                    ArgVal = codeGen.Builder->CreateTrunc(ArgVal, ParamType, "arg_trunc");
+                }
+            } else if (ParamType->isPointerTy() && ArgType->isPointerTy()) {
+                // Pointer Cast
+                ArgVal = codeGen.Builder->CreateBitCast(ArgVal, ParamType, "arg_bitcast");
+            } else if (ParamType->isFloatingPointTy() && ArgType->isIntegerTy()) {
+                ArgVal = codeGen.Builder->CreateSIToFP(ArgVal, ParamType, "arg_sitofp");
+            } else if (ParamType->isIntegerTy() && ArgType->isFloatingPointTy()) {
+                ArgVal = codeGen.Builder->CreateFPToSI(ArgVal, ParamType, "arg_fptosi");
+            }
+            // Add implicit Slice conversion logic here if needed, but keeping it simple for now
+        }
+
+        // Implicit Cast: Fixed Array -> Slice
+        // Param Type
         // Check if Param is Slice ({i32, T*})
         bool IsParamSlice = false;
         if (ParamType->isStructTy() && !ParamType->getStructName().starts_with("class.") && !ParamType->getStructName().starts_with("struct.")) {
@@ -629,7 +649,7 @@ llvm::Value *ExpressionCodeGen::codegen(CallExprAST &E) {
 
         ArgsV.push_back(ArgVal);
     }
-
+    
     return codeGen.Builder->CreateCall(CalleeF->getFunctionType(), CalleeF, ArgsV, "calltmp");
 }
 
@@ -1289,7 +1309,17 @@ llvm::Value *ExpressionCodeGen::codegen(NewExprAST &E) {
     if (size == 0) size = 1; // Minimum allocation
 
     llvm::Value *SizeVal = llvm::ConstantInt::get(llvm::Type::getInt64Ty(*codeGen.TheContext), size);
-    llvm::Value *VoidPtr = codeGen.Builder->CreateCall(MallocF, {SizeVal}, "mallocptr");
+    
+    // Convert SizeVal to match malloc's argument type
+    llvm::Value *MallocArg = SizeVal;
+    if (MallocF->arg_size() > 0) {
+        llvm::Type *MallocArgType = MallocF->getArg(0)->getType();
+        if (MallocArgType != MallocArg->getType()) {
+             MallocArg = codeGen.Builder->CreateZExtOrTrunc(MallocArg, MallocArgType, "malloc_size_cast");
+        }
+    }
+    
+    llvm::Value *VoidPtr = codeGen.Builder->CreateCall(MallocF, {MallocArg}, "mallocptr");
 
     // Cast to Struct*
     llvm::Value *ObjPtr = codeGen.Builder->CreateBitCast(VoidPtr, llvm::PointerType::get(StructType, 0), "objptr");
@@ -1474,8 +1504,17 @@ llvm::Value *ExpressionCodeGen::codegen(NewArrayExprAST &E) {
     llvm::Value *ElemSizeVal = llvm::ConstantInt::get(llvm::Type::getInt64Ty(*codeGen.TheContext), ElemBytes);
     llvm::Value *TotalBytes = codeGen.Builder->CreateMul(Size64, ElemSizeVal, "mallocsize");
 
+    // Convert TotalBytes to match malloc's argument type
+    llvm::Value *MallocArg = TotalBytes;
+    if (MallocF->arg_size() > 0) {
+        llvm::Type *MallocArgType = MallocF->getArg(0)->getType();
+        if (MallocArgType != MallocArg->getType()) {
+             MallocArg = codeGen.Builder->CreateZExtOrTrunc(MallocArg, MallocArgType, "malloc_size_cast");
+        }
+    }
+
     // 4. Call Malloc
-    llvm::Value *VoidPtr = codeGen.Builder->CreateCall(MallocF, {TotalBytes}, "mallocptr");
+    llvm::Value *VoidPtr = codeGen.Builder->CreateCall(MallocF, {MallocArg}, "mallocptr");
 
     // Cast to ElementType*
     llvm::Type *ElemLLVMType = codeGen.utilCodeGen->getLLVMType(E.getElementType());

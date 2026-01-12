@@ -1,4 +1,4 @@
-import "vector.olang";
+import "std/vector.olang";
 
 fn main() -> int {
     var vec = new Vector<int>();
