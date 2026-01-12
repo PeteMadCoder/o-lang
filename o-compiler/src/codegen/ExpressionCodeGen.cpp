@@ -227,8 +227,10 @@ llvm::Value *ExpressionCodeGen::codegen(VarDeclExprAST &E) {
                     llvm::Type* instantiatedType = codeGen.utilCodeGen->instantiateStruct(newExpr->getClassName(), newExpr->getGenericArgs());
                     if (instantiatedType) {
                         // Update the VarType to reflect the instantiated type name
+                        // IMPORTANT: We must clear genericArgs because the structName is now the concrete mangled name
+                        // Keeping genericArgs would cause "double mangling" (e.g., Box_int + <int> -> Box_int_int)
                         std::string instantiatedName = codeGen.utilCodeGen->mangleGenericName(newExpr->getClassName(), newExpr->getGenericArgs());
-                        VarType = OType(BaseType::Struct, 1, instantiatedName, {}, newExpr->getGenericArgs());
+                        VarType = OType(BaseType::Struct, 1, instantiatedName, {}, {});
                     }
                 }
             }
@@ -695,6 +697,114 @@ llvm::Value *ExpressionCodeGen::codegen(MethodCallExprAST &E) {
         CalleeF = codeGen.TheModule->getFunction(MangledName);
         if (!CalleeF) {
             CalleeF = codeGen.utilCodeGen->getFunctionFromPrototype(MangledName);
+        }
+
+        // If still not found, also try with corrected method name (in case instantiation created function with corrected name)
+        if (!CalleeF) {
+            std::string originalMethodName = E.getMethodName();
+            std::string correctedMethodName = originalMethodName;
+            if (originalMethodName.length() > 4) { // At least "int_"
+                if (originalMethodName.substr(0, 4) == "int_") {
+                    correctedMethodName = originalMethodName.substr(4); // Remove "int_"
+                } else if (originalMethodName.substr(0, 5) == "bool_") {
+                    correctedMethodName = originalMethodName.substr(5); // Remove "bool_"
+                } else if (originalMethodName.substr(0, 6) == "float_") {
+                    correctedMethodName = originalMethodName.substr(6); // Remove "float_"
+                } else if (originalMethodName.substr(0, 5) == "char_") {
+                    correctedMethodName = originalMethodName.substr(5); // Remove "char_"
+                } else if (originalMethodName.substr(0, 5) == "byte_") {
+                    correctedMethodName = originalMethodName.substr(5); // Remove "byte_"
+                }
+            }
+
+            // If we corrected the method name, try looking up with the corrected name after instantiation
+            if (correctedMethodName != originalMethodName) {
+                std::string correctedMangledName = StructName + "_" + correctedMethodName;
+                CalleeF = codeGen.TheModule->getFunction(correctedMangledName);
+
+                if (!CalleeF) {
+                    CalleeF = codeGen.utilCodeGen->getFunctionFromPrototype(correctedMangledName);
+                }
+            }
+        }
+    }
+
+    // If still not found, try a workaround for the method name mangling issue
+    // where method names might be incorrectly set to include return type info
+    if (!CalleeF) {
+        std::string originalMethodName = E.getMethodName();
+
+        // Check if the method name looks like it includes type info (e.g., "int_get" instead of "get")
+        // Try to extract the actual method name by removing potential type prefixes
+        std::string correctedMethodName = originalMethodName;
+        if (originalMethodName.length() > 4) { // At least "int_"
+            // Check if it starts with a common type name followed by "_"
+            if (originalMethodName.substr(0, 4) == "int_") {
+                correctedMethodName = originalMethodName.substr(4); // Remove "int_"
+            } else if (originalMethodName.substr(0, 5) == "bool_") {
+                correctedMethodName = originalMethodName.substr(5); // Remove "bool_"
+            } else if (originalMethodName.substr(0, 6) == "float_") {
+                correctedMethodName = originalMethodName.substr(6); // Remove "float_"
+            } else if (originalMethodName.substr(0, 5) == "char_") {
+                correctedMethodName = originalMethodName.substr(5); // Remove "char_"
+            } else if (originalMethodName.substr(0, 5) == "byte_") {
+                correctedMethodName = originalMethodName.substr(5); // Remove "byte_"
+            }
+        }
+
+        // If we corrected the method name, try looking up with the corrected name
+        if (correctedMethodName != originalMethodName) {
+            std::string correctedMangledName = StructName + "_" + correctedMethodName;
+            CalleeF = codeGen.TheModule->getFunction(correctedMangledName);
+
+            if (!CalleeF) {
+                CalleeF = codeGen.utilCodeGen->getFunctionFromPrototype(correctedMangledName);
+            }
+
+            // If found with corrected name, use the corrected mangled name
+            if (CalleeF) {
+                MangledName = correctedMangledName;
+            }
+        }
+    }
+
+    // If still not found, try additional fallbacks for common name mangling issues
+    if (!CalleeF) {
+        // Try looking for common patterns where return type might have been prepended to method name
+        std::vector<std::string> possibleMethodNames = {E.getMethodName()};
+
+        // Add corrected versions of the method name
+        std::string originalMethodName = E.getMethodName();
+        if (originalMethodName.length() > 4) {
+            std::string correctedName = originalMethodName;
+            if (originalMethodName.substr(0, 4) == "int_") {
+                correctedName = originalMethodName.substr(4);
+            } else if (originalMethodName.substr(0, 5) == "bool_") {
+                correctedName = originalMethodName.substr(5);
+            } else if (originalMethodName.substr(0, 6) == "float_") {
+                correctedName = originalMethodName.substr(6);
+            } else if (originalMethodName.substr(0, 5) == "char_") {
+                correctedName = originalMethodName.substr(5);
+            } else if (originalMethodName.substr(0, 5) == "byte_") {
+                correctedName = originalMethodName.substr(5);
+            }
+
+            if (correctedName != originalMethodName) {
+                possibleMethodNames.push_back(correctedName);
+            }
+        }
+
+        // Try each possible method name
+        for (const auto& methodName : possibleMethodNames) {
+            std::string alternativeMangledName = StructName + "_" + methodName;
+            CalleeF = codeGen.TheModule->getFunction(alternativeMangledName);
+            if (!CalleeF) {
+                CalleeF = codeGen.utilCodeGen->getFunctionFromPrototype(alternativeMangledName);
+            }
+            if (CalleeF) {
+                MangledName = alternativeMangledName;
+                break;
+            }
         }
     }
 
