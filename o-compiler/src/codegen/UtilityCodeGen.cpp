@@ -623,6 +623,13 @@ llvm::Function *UtilityCodeGen::getFunctionFromPrototype(std::string Name) {
         llvm::Function *F = codeGen.TheModule->getFunction(Name);
         if (F) return F;
 
+        // Check if we're already in the process of generating this function to prevent infinite recursion
+        static std::set<std::string> generatingFunctions;
+        if (generatingFunctions.count(Name)) {
+            fprintf(stderr, "Warning: Recursive function generation detected for %s, returning nullptr\n", Name.c_str());
+            return nullptr;
+        }
+
         // Otherwise, we need to create it from the prototype
         // But be very careful here to avoid segfaults
         auto protoSharedPtr = it->second;
@@ -633,8 +640,16 @@ llvm::Function *UtilityCodeGen::getFunctionFromPrototype(std::string Name) {
             return nullptr;
         }
 
+        // Add to the generating set to prevent recursive calls
+        generatingFunctions.insert(Name);
+
         // Generate code for the function
-        return codeGen.funcCodeGen->codegen(*protoSharedPtr);
+        llvm::Function *result = codeGen.funcCodeGen->codegen(*protoSharedPtr);
+
+        // Remove from the generating set after generation
+        generatingFunctions.erase(Name);
+
+        return result;
     }
     return nullptr;
 }

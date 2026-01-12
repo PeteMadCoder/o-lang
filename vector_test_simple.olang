@@ -1,0 +1,10 @@
+import "std/vector.olang";
+
+fn main() -> int {
+    var v = new Vector<int>();
+    
+    // Just call pop() directly without push() to see if that's the issue
+    v.pop();
+    
+    return 0;
+}

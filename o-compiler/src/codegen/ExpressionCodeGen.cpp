@@ -2,63 +2,77 @@
 #include "UtilityCodeGen.h"
 
 llvm::Value *ExpressionCodeGen::codegen(ExprAST &E) {
-    // Dispatch to the appropriate expression codegen method based on dynamic type
-    if (dynamic_cast<BoolExprAST*>(&E)) {
-        return codegen(static_cast<BoolExprAST&>(E));
-    } else if (dynamic_cast<StringExprAST*>(&E)) {
-        return codegen(static_cast<StringExprAST&>(E));
-    } else if (dynamic_cast<CastExprAST*>(&E)) {
-        return codegen(static_cast<CastExprAST&>(E));
-    } else if (dynamic_cast<NumberExprAST*>(&E)) {
-        return codegen(static_cast<NumberExprAST&>(E));
-    } else if (dynamic_cast<VariableExprAST*>(&E)) {
-        return codegen(static_cast<VariableExprAST&>(E));
-    } else if (dynamic_cast<VarDeclExprAST*>(&E)) {
-        return codegen(static_cast<VarDeclExprAST&>(E));
-    } else if (dynamic_cast<AssignmentExprAST*>(&E)) {
-        return codegen(static_cast<AssignmentExprAST&>(E));
-    } else if (dynamic_cast<ReturnExprAST*>(&E)) {
-        return codegen(static_cast<ReturnExprAST&>(E));
-    } else if (dynamic_cast<DeleteExprAST*>(&E)) {
-        return codegen(static_cast<DeleteExprAST&>(E));
-    } else if (dynamic_cast<NegateExprAST*>(&E)) {
-        return codegen(static_cast<NegateExprAST&>(E));
-    } else if (dynamic_cast<BinaryExprAST*>(&E)) {
-        return codegen(static_cast<BinaryExprAST&>(E));
-    } else if (dynamic_cast<CallExprAST*>(&E)) {
-        return codegen(static_cast<CallExprAST&>(E));
-    } else if (dynamic_cast<MethodCallExprAST*>(&E)) {
-        return codegen(static_cast<MethodCallExprAST&>(E));
-    } else if (dynamic_cast<BlockExprAST*>(&E)) {
-        return codegen(static_cast<BlockExprAST&>(E));
-    } else if (dynamic_cast<IfExprAST*>(&E)) {
-        return codegen(static_cast<IfExprAST&>(E));
-    } else if (dynamic_cast<WhileExprAST*>(&E)) {
-        return codegen(static_cast<WhileExprAST&>(E));
-    } else if (dynamic_cast<ForExprAST*>(&E)) {
-        return codegen(static_cast<ForExprAST&>(E));
-    } else if (dynamic_cast<AddressOfExprAST*>(&E)) {
-        return codegen(static_cast<AddressOfExprAST&>(E));
-    } else if (dynamic_cast<DerefExprAST*>(&E)) {
-        return codegen(static_cast<DerefExprAST&>(E));
-    } else if (dynamic_cast<NewExprAST*>(&E)) {
-        return codegen(static_cast<NewExprAST&>(E));
-    } else if (dynamic_cast<NewArrayExprAST*>(&E)) {
-        return codegen(static_cast<NewArrayExprAST&>(E));
-    } else if (dynamic_cast<MatchExprAST*>(&E)) {
-        return codegen(static_cast<MatchExprAST&>(E));
-    } else if (dynamic_cast<IndexExprAST*>(&E)) {
-        return codegen(static_cast<IndexExprAST&>(E));
-    } else if (dynamic_cast<MemberAccessAST*>(&E)) {
-        return codegen(static_cast<MemberAccessAST&>(E));
-    } else if (dynamic_cast<ArrayInitExprAST*>(&E)) {
-        return codegen(static_cast<ArrayInitExprAST&>(E));
-    } else if (dynamic_cast<ArrayLiteralExprAST*>(&E)) {
-        return codegen(static_cast<ArrayLiteralExprAST&>(E));
-    } else {
-        codeGen.logError("Unknown expression type in codegen");
+    // Prevent infinite recursion by tracking visited AST nodes
+    static std::set<const ExprAST*> visitedNodes;
+    if (visitedNodes.count(&E)) {
+        codeGen.logError("Recursive AST detected, preventing infinite recursion");
         return nullptr;
     }
+    visitedNodes.insert(&E);
+
+    llvm::Value *result = nullptr;
+
+    // Dispatch to the appropriate expression codegen method based on dynamic type
+    if (dynamic_cast<BoolExprAST*>(&E)) {
+        result = codegen(static_cast<BoolExprAST&>(E));
+    } else if (dynamic_cast<StringExprAST*>(&E)) {
+        result = codegen(static_cast<StringExprAST&>(E));
+    } else if (dynamic_cast<CastExprAST*>(&E)) {
+        result = codegen(static_cast<CastExprAST&>(E));
+    } else if (dynamic_cast<NumberExprAST*>(&E)) {
+        result = codegen(static_cast<NumberExprAST&>(E));
+    } else if (dynamic_cast<VariableExprAST*>(&E)) {
+        result = codegen(static_cast<VariableExprAST&>(E));
+    } else if (dynamic_cast<VarDeclExprAST*>(&E)) {
+        result = codegen(static_cast<VarDeclExprAST&>(E));
+    } else if (dynamic_cast<AssignmentExprAST*>(&E)) {
+        result = codegen(static_cast<AssignmentExprAST&>(E));
+    } else if (dynamic_cast<ReturnExprAST*>(&E)) {
+        result = codegen(static_cast<ReturnExprAST&>(E));
+    } else if (dynamic_cast<DeleteExprAST*>(&E)) {
+        result = codegen(static_cast<DeleteExprAST&>(E));
+    } else if (dynamic_cast<NegateExprAST*>(&E)) {
+        result = codegen(static_cast<NegateExprAST&>(E));
+    } else if (dynamic_cast<BinaryExprAST*>(&E)) {
+        result = codegen(static_cast<BinaryExprAST&>(E));
+    } else if (dynamic_cast<CallExprAST*>(&E)) {
+        result = codegen(static_cast<CallExprAST&>(E));
+    } else if (dynamic_cast<MethodCallExprAST*>(&E)) {
+        result = codegen(static_cast<MethodCallExprAST&>(E));
+    } else if (dynamic_cast<BlockExprAST*>(&E)) {
+        result = codegen(static_cast<BlockExprAST&>(E));
+    } else if (dynamic_cast<IfExprAST*>(&E)) {
+        result = codegen(static_cast<IfExprAST&>(E));
+    } else if (dynamic_cast<WhileExprAST*>(&E)) {
+        result = codegen(static_cast<WhileExprAST&>(E));
+    } else if (dynamic_cast<ForExprAST*>(&E)) {
+        result = codegen(static_cast<ForExprAST&>(E));
+    } else if (dynamic_cast<AddressOfExprAST*>(&E)) {
+        result = codegen(static_cast<AddressOfExprAST&>(E));
+    } else if (dynamic_cast<DerefExprAST*>(&E)) {
+        result = codegen(static_cast<DerefExprAST&>(E));
+    } else if (dynamic_cast<NewExprAST*>(&E)) {
+        result = codegen(static_cast<NewExprAST&>(E));
+    } else if (dynamic_cast<NewArrayExprAST*>(&E)) {
+        result = codegen(static_cast<NewArrayExprAST&>(E));
+    } else if (dynamic_cast<MatchExprAST*>(&E)) {
+        result = codegen(static_cast<MatchExprAST&>(E));
+    } else if (dynamic_cast<IndexExprAST*>(&E)) {
+        result = codegen(static_cast<IndexExprAST&>(E));
+    } else if (dynamic_cast<MemberAccessAST*>(&E)) {
+        result = codegen(static_cast<MemberAccessAST&>(E));
+    } else if (dynamic_cast<ArrayInitExprAST*>(&E)) {
+        result = codegen(static_cast<ArrayInitExprAST&>(E));
+    } else if (dynamic_cast<ArrayLiteralExprAST*>(&E)) {
+        result = codegen(static_cast<ArrayLiteralExprAST&>(E));
+    } else {
+        codeGen.logError("Unknown expression type in codegen");
+        result = nullptr;
+    }
+
+    // Clean up the visited set
+    visitedNodes.erase(&E);
+    return result;
 }
 
 llvm::Value *ExpressionCodeGen::codegen(BoolExprAST &E) {
@@ -526,9 +540,37 @@ llvm::Value *ExpressionCodeGen::codegen(BinaryExprAST &E) {
 llvm::Value *ExpressionCodeGen::codegen(CallExprAST &E) {
     llvm::Function *CalleeF = codeGen.TheModule->getFunction(E.getCallee());
     if (!CalleeF) {
-        // Attempt to recover from missing function during generic instantiation
-        // by looking up the prototype in the global registry
-        CalleeF = codeGen.utilCodeGen->getFunctionFromPrototype(E.getCallee());
+        // Check if this is a well-known external C function that should be pre-declared
+        if (E.getCallee() == "exit") {
+            // Declare exit function: void exit(int)
+            std::vector<llvm::Type*> Args;
+            Args.push_back(llvm::Type::getInt32Ty(*codeGen.TheContext));
+            llvm::FunctionType *FT = llvm::FunctionType::get(
+                llvm::Type::getVoidTy(*codeGen.TheContext), Args, false);
+            CalleeF = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "exit", codeGen.TheModule);
+        }
+        else if (E.getCallee() == "malloc") {
+            // Declare malloc function: void* malloc(size_t)
+            std::vector<llvm::Type*> Args;
+            Args.push_back(llvm::Type::getInt32Ty(*codeGen.TheContext)); // size_t as int for simplicity
+            llvm::FunctionType *FT = llvm::FunctionType::get(
+                llvm::PointerType::get(*codeGen.TheContext, 0), Args, false); // void*
+            CalleeF = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "malloc", codeGen.TheModule);
+        }
+        else if (E.getCallee() == "free") {
+            // Declare free function: void free(void*)
+            std::vector<llvm::Type*> Args;
+            Args.push_back(llvm::PointerType::get(*codeGen.TheContext, 0)); // void*
+            llvm::FunctionType *FT = llvm::FunctionType::get(
+                llvm::Type::getVoidTy(*codeGen.TheContext), Args, false);
+            CalleeF = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "free", codeGen.TheModule);
+        }
+        // Add other well-known C functions as needed
+        else {
+            // Attempt to recover from missing function during generic instantiation
+            // by looking up the prototype in the global registry
+            CalleeF = codeGen.utilCodeGen->getFunctionFromPrototype(E.getCallee());
+        }
     }
 
     // 3. --- SEGFAULT PREVENTION ---
@@ -649,7 +691,7 @@ llvm::Value *ExpressionCodeGen::codegen(CallExprAST &E) {
 
         ArgsV.push_back(ArgVal);
     }
-    
+
     return codeGen.Builder->CreateCall(CalleeF->getFunctionType(), CalleeF, ArgsV, "calltmp");
 }
 
