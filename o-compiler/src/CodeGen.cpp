@@ -366,6 +366,7 @@ OType MemberAccessAST::getOType() const {
 
 // Helper function implementations that were originally in CodeGen.cpp
 void RegisterFunctionProto(std::unique_ptr<PrototypeAST> Proto) {
+    std::cerr << "Registering global proto: " << Proto->getName() << "\n";
     if (GlobalCodeGen) {
         GlobalCodeGen->utilCodeGen->RegisterFunctionProto(std::move(Proto));
     }

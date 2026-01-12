@@ -1,0 +1,10 @@
+import "lib.olang";
+
+fn main() -> int {
+    // Instantiate Box<int>.
+    // Note: my_exit() is NOT called in main(), only inside Box.
+    // This triggers deferred instantiation for Box<int>.
+    var b = new Box<int>();
+    b.do_exit();
+    return 0;
+}

@@ -1,0 +1,11 @@
+// Declare external function (no body)
+fn my_exit(status: int);
+
+struct Box<T> {
+    val: T;
+    
+    fn do_exit() {
+        // Crash happens here during instantiation if my_exit is not declared in module
+        my_exit(1); 
+    }
+}
