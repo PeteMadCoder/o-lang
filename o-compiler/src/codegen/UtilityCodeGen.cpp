@@ -1090,8 +1090,12 @@ llvm::Type* UtilityCodeGen::instantiateStructSkeleton(const std::string& generic
         }
     }
 
+    // Store the instantiated struct in the registry so it can be found later
+    codeGen.GenericStructRegistry[mangledName] = std::move(newAST);
+
     // QUEUE FOR LATER (Add to the instantiation queue for deferred body generation)
-    codeGen.utilCodeGen->getInstantiationQueue().push_back({std::move(newAST), mangledName});
+    // Since newAST has been moved, we just store the mangledName for tracking purposes
+    codeGen.utilCodeGen->getInstantiationQueue().push_back({nullptr, mangledName});
 
     // Remove from in-progress set
     InProgressInstantiations.erase(mangledName);

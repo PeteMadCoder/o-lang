@@ -1367,6 +1367,7 @@ llvm::Value *ExpressionCodeGen::codegen(NewExprAST &E) {
 
     std::string MangledName = ConstructorName;
     if (!argTypes.empty()) {
+        // Use the same mangling logic as in UtilityCodeGen.cpp for constructor names
         MangledName = codeGen.utilCodeGen->mangleGenericName(ConstructorName, argTypes);
     }
 
@@ -1395,27 +1396,29 @@ llvm::Value *ExpressionCodeGen::codegen(NewExprAST &E) {
         std::cerr << "Found constructor via global registry (base): " << (Constructor ? "YES" : "NO") << "\n";
     }
 
-    // CRITICAL FIX: If constructor is still not found, check if we need to force instantiation
+    // CRITICAL FIX: If constructor is still not found, trigger instantiation request
     // This is especially important when called from within struct methods during instantiation
     if (!Constructor) {
-        std::cerr << "Constructor not found, checking for forced instantiation...\n";
+        std::cerr << "Constructor not found, checking for instantiation...\n";
         // If this is a generic struct that should have been instantiated but wasn't,
-        // try to instantiate it now and look again
+        // trigger instantiation (but do not process queue recursively)
         if (!E.getGenericArgs().empty() && codeGen.GenericStructRegistry.count(E.getClassName()) > 0) {
-            std::cerr << "Attempting forced instantiation of generic struct: " << E.getClassName() << "\n";
-            // Force instantiation of the struct and its constructors
+            std::cerr << "Triggering instantiation of generic struct: " << E.getClassName() << "\n";
+            // This creates the Struct Type and the Constructor PROTOTYPE
             llvm::Type* instantiatedType = codeGen.utilCodeGen->instantiateStruct(E.getClassName(), E.getGenericArgs());
             std::cerr << "Instantiation result: " << (instantiatedType ? "SUCCESS" : "FAILED") << "\n";
 
-            // Process any deferred instantiations that might have been queued
-            codeGen.processDeferredInstantiations();
-
-            // Look again for the constructor after instantiation
+            // Look again for the constructor after instantiation (the prototype should exist now)
             Constructor = codeGen.TheModule->getFunction(MangledName);
             std::cerr << "After instantiation - Found constructor via mangled name: " << (Constructor ? "YES" : "NO") << "\n";
             if (!Constructor) {
                 Constructor = codeGen.TheModule->getFunction(ConstructorName);
                 std::cerr << "After instantiation - Found constructor via base name: " << (Constructor ? "YES" : "NO") << "\n";
+            }
+
+            // If still not found, check mangling (do not call processDeferredInstantiations here!)
+            if (!Constructor) {
+                 Constructor = codeGen.TheModule->getFunction(ConstructorName);
             }
         } else if (!E.getGenericArgs().empty()) {
             std::cerr << "Generic args provided but struct not found in GenericStructRegistry\n";

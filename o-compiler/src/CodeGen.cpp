@@ -409,6 +409,7 @@ void semanticDiscoveryPhase() {
                 auto it = GlobalCodeGen->GenericStructRegistry.find(req.baseName);
                 if (it != GlobalCodeGen->GenericStructRegistry.end()) {
                     // Instantiate the struct with the given type arguments
+                    // This creates the type and function prototypes but not the bodies
                     GlobalCodeGen->utilCodeGen->instantiateStruct(req.baseName, req.typeArgs);
                 }
             }
@@ -431,8 +432,36 @@ void validationPhase() {
 }
 
 void codeGenerationPhase() {
-    // This is the existing processDeferredInstantiations call
     if (GlobalCodeGen) {
+        // 1. Generate code for all top-level non-generic functions first
+        // This is handled elsewhere in the compilation process
+
+        // 2. Iteratively process the instantiation queue using worklist algorithm
+        // This is the "Worklist" algorithm to avoid recursive instantiation issues
+        while (GlobalCodeGen->instantiationManager->hasPending()) {
+            // Get the next pending instantiation
+            InstantiationRequest pendingItem = GlobalCodeGen->instantiationManager->dequeue();
+
+            // Generate bodies for this specific instantiation
+            // This might trigger NEW instantiations, which will be added to the queue
+            if (pendingItem.kind == InstantiationRequest::Struct) {
+                // The instantiated struct should already be in the registry with the mangled name
+                std::string mangledName = GlobalCodeGen->utilCodeGen->mangleGenericName(
+                    pendingItem.baseName, pendingItem.typeArgs);
+
+                // Look for the instantiated struct in the registry
+                auto instantiatedIt = GlobalCodeGen->GenericStructRegistry.find(mangledName);
+                if (instantiatedIt != GlobalCodeGen->GenericStructRegistry.end() && instantiatedIt->second) {
+                    // Generate the struct and its methods
+                    GlobalCodeGen->codegen(*instantiatedIt->second);
+
+                    // Mark this instantiation as processed
+                    GlobalCodeGen->instantiationManager->markAsInstantiated(pendingItem);
+                }
+            }
+        }
+
+        // Process any remaining deferred instantiations that were added during the process
         GlobalCodeGen->processDeferredInstantiations();
     }
 }

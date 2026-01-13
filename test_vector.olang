@@ -1,0 +1,16 @@
+import "std/vector_working.olang";
+
+fn main() -> int {
+    var vec = new Vector<int>();
+    
+    vec.push(10);
+    vec.push(20);
+    vec.push(30);
+    
+    var size = vec.size();
+    var first = vec[0];
+    var second = vec[1];
+    var third = vec[2];
+    
+    return size;  // Should return 3
+}
