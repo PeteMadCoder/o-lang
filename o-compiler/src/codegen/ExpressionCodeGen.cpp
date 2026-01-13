@@ -1,14 +1,15 @@
 #include "ExpressionCodeGen.h"
 #include "UtilityCodeGen.h"
+#include <unordered_set>
+
+static thread_local std::unordered_set<const ExprAST*> activeCodegen;
 
 llvm::Value *ExpressionCodeGen::codegen(ExprAST &E) {
-    // Prevent infinite recursion by tracking visited AST nodes
-    static std::set<const ExprAST*> visitedNodes;
-    if (visitedNodes.count(&E)) {
-        codeGen.logError("Recursive AST detected, preventing infinite recursion");
-        return nullptr;
+    if (!activeCodegen.insert(&E).second) {
+        llvm::errs() << "FATAL: AST cycle detected during codegen\n";
+        E.dump();
+        abort();
     }
-    visitedNodes.insert(&E);
 
     llvm::Value *result = nullptr;
 
@@ -70,8 +71,7 @@ llvm::Value *ExpressionCodeGen::codegen(ExprAST &E) {
         result = nullptr;
     }
 
-    // Clean up the visited set
-    visitedNodes.erase(&E);
+    activeCodegen.erase(&E);
     return result;
 }
 

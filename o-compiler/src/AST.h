@@ -23,6 +23,10 @@
 // Forward declarations
 class FunctionAST;
 class ConstructorAST;
+class ExprAST; // Forward declare for CloneMemo
+
+// Define CloneMemo using forward declaration
+using CloneMemo = std::unordered_map<const ExprAST*, ExprAST*>;
 
 // 1. Enhanced Type System for Pointers
 enum class BaseType { Void, Int, Float, Bool, Char, Byte, Struct };
@@ -210,7 +214,18 @@ public:
     virtual OType getOType() const { return OType(BaseType::Void); }
 
     // Clone method for deep copy with type substitution
-    virtual std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const = 0;
+    virtual std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
+                                          CloneMemo& memo) const = 0;
+
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const {
+        CloneMemo memo;
+        return clone(typeMap, memo);
+    }
+
+    // For debugging - dump the AST node
+    virtual void dump() const {
+        // Default implementation does nothing
+    }
 };
 
 // 2a. Boolean Node
@@ -220,7 +235,15 @@ public:
     BoolExprAST(bool Val) : Val(Val) {}
     llvm::Value *codegen() override;
     OType getOType() const override { return OType(BaseType::Bool); }
-    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override { return std::make_unique<BoolExprAST>(Val); }
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
+                                   CloneMemo& memo) const override {
+        if (auto it = memo.find(this); it != memo.end())
+            return std::unique_ptr<ExprAST>(it->second);
+
+        auto* raw = new BoolExprAST(Val);
+        memo[this] = raw;
+        return std::unique_ptr<ExprAST>(raw);
+    }
 
     // Getters for use in code generation
     bool getVal() const { return Val; }
@@ -234,8 +257,18 @@ public:
     WhileExprAST(std::unique_ptr<ExprAST> Cond, std::unique_ptr<ExprAST> Body)
         : Cond(std::move(Cond)), Body(std::move(Body)) {}
     llvm::Value *codegen() override;
-    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
-        return std::make_unique<WhileExprAST>(Cond->clone(typeMap), Body->clone(typeMap));
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
+                                   CloneMemo& memo) const override {
+        if (auto it = memo.find(this); it != memo.end())
+            return std::unique_ptr<ExprAST>(it->second);
+
+        auto* raw = new WhileExprAST(nullptr, nullptr);
+        memo[this] = raw;
+
+        raw->Cond = Cond->clone(typeMap, memo);
+        raw->Body = Body->clone(typeMap, memo);
+
+        return std::unique_ptr<ExprAST>(raw);
     }
 
     // Getters for use in code generation
@@ -255,13 +288,20 @@ public:
         : Init(std::move(Init)), Cond(std::move(Cond)),
           Step(std::move(Step)), Body(std::move(Body)) {}
     llvm::Value *codegen() override;
-    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
-        return std::make_unique<ForExprAST>(
-            Init ? Init->clone(typeMap) : nullptr,
-            Cond ? Cond->clone(typeMap) : nullptr,
-            Step ? Step->clone(typeMap) : nullptr,
-            Body->clone(typeMap)
-        );
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
+                                   CloneMemo& memo) const override {
+        if (auto it = memo.find(this); it != memo.end())
+            return std::unique_ptr<ExprAST>(it->second);
+
+        auto* raw = new ForExprAST(nullptr, nullptr, nullptr, nullptr);
+        memo[this] = raw;
+
+        raw->Init = Init ? Init->clone(typeMap, memo) : nullptr;
+        raw->Cond = Cond ? Cond->clone(typeMap, memo) : nullptr;
+        raw->Step = Step ? Step->clone(typeMap, memo) : nullptr;
+        raw->Body = Body->clone(typeMap, memo);
+
+        return std::unique_ptr<ExprAST>(raw);
     }
 
     // Getters for use in code generation
@@ -281,7 +321,15 @@ public:
     OType getType() const { return Type; } // Type getter
     double getVal() const { return Val; } // Value getter
     OType getOType() const override { return Type; }
-    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override { return std::make_unique<NumberExprAST>(Val, Type.substitute(typeMap)); }
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
+                                   CloneMemo& memo) const override {
+        if (auto it = memo.find(this); it != memo.end())
+            return std::unique_ptr<ExprAST>(it->second);
+
+        auto* raw = new NumberExprAST(Val, Type.substitute(typeMap));
+        memo[this] = raw;
+        return std::unique_ptr<ExprAST>(raw);
+    }
 };
 
 /// StringExprAST - Expression class for string literals like "hello"
@@ -291,7 +339,15 @@ public:
     StringExprAST(const std::string &Val) : Val(Val) {}
     llvm::Value *codegen() override;
     OType getOType() const override { return OType(BaseType::Char, 1); } // char*
-    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override { return std::make_unique<StringExprAST>(Val); }
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
+                                   CloneMemo& memo) const override {
+        if (auto it = memo.find(this); it != memo.end())
+            return std::unique_ptr<ExprAST>(it->second);
+
+        auto* raw = new StringExprAST(Val);
+        memo[this] = raw;
+        return std::unique_ptr<ExprAST>(raw);
+    }
 
     // Getters for use in code generation
     const std::string& getVal() const { return Val; }
@@ -371,8 +427,17 @@ public:
     llvm::Value *codegen() override;
     llvm::Value *codegenAddress() override;
     OType getOType() const override;
-    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
-        return std::make_unique<MemberAccessAST>(Object->clone(typeMap), FieldName);
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
+                                   CloneMemo& memo) const override {
+        if (auto it = memo.find(this); it != memo.end())
+            return std::unique_ptr<ExprAST>(it->second);
+
+        auto* raw = new MemberAccessAST(nullptr, FieldName);
+        memo[this] = raw;
+
+        raw->Object = Object->clone(typeMap, memo);
+
+        return std::unique_ptr<ExprAST>(raw);
     }
 
     // Getters for use in code generation
@@ -392,7 +457,7 @@ public:
     const std::vector<std::pair<std::string, OType>>& getParams() const { return Params; }
     ExprAST* getBody() { return Body.get(); }
     std::unique_ptr<ConstructorAST> clone(const std::map<std::string, OType>& typeMap = {}) const {
-        // ... (clone impl)
+        // ConstructorAST doesn't inherit from ExprAST, so it doesn't need the memoized clone
         std::vector<std::pair<std::string, OType>> NewParams;
         for(const auto& p : Params) NewParams.push_back({p.first, p.second.substitute(typeMap)});
         return std::make_unique<ConstructorAST>(NewParams, Body ? Body->clone(typeMap) : nullptr);
@@ -407,8 +472,17 @@ public:
         : Operand(std::move(Operand)) {}
     llvm::Value *codegen() override;
     OType getOType() const override;
-    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
-        return std::make_unique<AddressOfExprAST>(Operand->clone(typeMap));
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
+                                   CloneMemo& memo) const override {
+        if (auto it = memo.find(this); it != memo.end())
+            return std::unique_ptr<ExprAST>(it->second);
+
+        auto* raw = new AddressOfExprAST(nullptr);
+        memo[this] = raw;
+
+        raw->Operand = Operand->clone(typeMap, memo);
+
+        return std::unique_ptr<ExprAST>(raw);
     }
 
     // Getters for use in code generation
@@ -424,8 +498,17 @@ public:
     llvm::Value *codegen() override;
     llvm::Value *codegenAddress() override; // For LHS assignment: *ptr = value
     OType getOType() const override;
-    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
-        return std::make_unique<DerefExprAST>(Operand->clone(typeMap));
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
+                                   CloneMemo& memo) const override {
+        if (auto it = memo.find(this); it != memo.end())
+            return std::unique_ptr<ExprAST>(it->second);
+
+        auto* raw = new DerefExprAST(nullptr);
+        memo[this] = raw;
+
+        raw->Operand = Operand->clone(typeMap, memo);
+
+        return std::unique_ptr<ExprAST>(raw);
     }
 
     // Getters for use in code generation
@@ -442,13 +525,22 @@ public:
         : ClassName(ClassName), Args(std::move(Args)), GenericArgs(GenArgs) {}
     llvm::Value *codegen() override;
     OType getOType() const override { return OType(BaseType::Struct, 1, ClassName, {}, GenericArgs); } // Returns pointer to struct
-    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
+                                   CloneMemo& memo) const override {
+        if (auto it = memo.find(this); it != memo.end())
+            return std::unique_ptr<ExprAST>(it->second);
+
         OType temp(BaseType::Struct, 0, ClassName, {}, GenericArgs);
         temp = temp.substitute(typeMap);
 
+        auto* raw = new NewExprAST(temp.structName, {}, temp.genericArgs);
+        memo[this] = raw;
+
         std::vector<std::unique_ptr<ExprAST>> NewArgs;
-        for(const auto& a : Args) NewArgs.push_back(a->clone(typeMap));
-        return std::make_unique<NewExprAST>(temp.structName, std::move(NewArgs), temp.genericArgs);
+        for(const auto& a : Args) NewArgs.push_back(a->clone(typeMap, memo));
+        raw->Args = std::move(NewArgs);
+
+        return std::unique_ptr<ExprAST>(raw);
     }
 
     // Getters for use in code generation
@@ -466,8 +558,17 @@ public:
         : ElementType(ElementType), Size(std::move(Size)) {}
     llvm::Value *codegen() override;
     OType getOType() const override;
-    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
-        return std::make_unique<NewArrayExprAST>(ElementType.substitute(typeMap), Size->clone(typeMap));
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
+                                   CloneMemo& memo) const override {
+        if (auto it = memo.find(this); it != memo.end())
+            return std::unique_ptr<ExprAST>(it->second);
+
+        auto* raw = new NewArrayExprAST(ElementType.substitute(typeMap), nullptr);
+        memo[this] = raw;
+
+        raw->Size = Size->clone(typeMap, memo);
+
+        return std::unique_ptr<ExprAST>(raw);
     }
 
     // Getters for use in code generation
@@ -485,8 +586,18 @@ public:
     llvm::Value *codegen() override;
     llvm::Value *codegenAddress() override;
     OType getOType() const override;
-    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
-        return std::make_unique<IndexExprAST>(Array->clone(typeMap), Index->clone(typeMap));
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
+                                   CloneMemo& memo) const override {
+        if (auto it = memo.find(this); it != memo.end())
+            return std::unique_ptr<ExprAST>(it->second);
+
+        auto* raw = new IndexExprAST(nullptr, nullptr);
+        memo[this] = raw;
+
+        raw->Array = Array->clone(typeMap, memo);
+        raw->Index = Index->clone(typeMap, memo);
+
+        return std::unique_ptr<ExprAST>(raw);
     }
 
     // Getters for use in code generation
@@ -503,8 +614,14 @@ public:
         : ElementType(ElementType), Size(Size) {}
     llvm::Value *codegen() override;
     OType getOType() const override { return OType(ElementType.base, ElementType.pointerDepth, ElementType.structName, Size); }
-    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
-        return std::make_unique<ArrayLiteralExprAST>(ElementType.substitute(typeMap), Size);
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
+                                   CloneMemo& memo) const override {
+        if (auto it = memo.find(this); it != memo.end())
+            return std::unique_ptr<ExprAST>(it->second);
+
+        auto* raw = new ArrayLiteralExprAST(ElementType.substitute(typeMap), Size);
+        memo[this] = raw;
+        return std::unique_ptr<ExprAST>(raw);
     }
 
     // Getters for use in code generation
@@ -522,10 +639,19 @@ public:
     llvm::Value *codegen() override;
     OType getType() const { return OType(ElementType.base, 0, ElementType.structName, Elements.size()); }
     OType getOType() const override { return getType(); }
-    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
+                                   CloneMemo& memo) const override {
+        if (auto it = memo.find(this); it != memo.end())
+            return std::unique_ptr<ExprAST>(it->second);
+
+        auto* raw = new ArrayInitExprAST({}, ElementType.substitute(typeMap));
+        memo[this] = raw;
+
         std::vector<std::unique_ptr<ExprAST>> NewElements;
-        for(const auto& e : Elements) NewElements.push_back(e->clone(typeMap));
-        return std::make_unique<ArrayInitExprAST>(std::move(NewElements), ElementType.substitute(typeMap));
+        for(const auto& e : Elements) NewElements.push_back(e->clone(typeMap, memo));
+        raw->Elements = std::move(NewElements);
+
+        return std::unique_ptr<ExprAST>(raw);
     }
 
     // Getters for use in code generation
@@ -545,14 +671,21 @@ public:
     const std::string& getTypeName() const { return TypeName; }
     const std::string& getName() const { return Name; }
     OType getOType() const override;
-    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
+                                   CloneMemo& memo) const override {
+        if (auto it = memo.find(this); it != memo.end())
+            return std::unique_ptr<ExprAST>(it->second);
+
         std::string newTypeName = TypeName;
         if (!TypeName.empty()) {
              OType temp(BaseType::Struct, 0, TypeName);
              temp = temp.substitute(typeMap);
              newTypeName = temp.structName;
         }
-        return std::make_unique<VariableExprAST>(Name, newTypeName);
+
+        auto* raw = new VariableExprAST(Name, newTypeName);
+        memo[this] = raw;
+        return std::unique_ptr<ExprAST>(raw);
     }
 
     // Getters for use in code generation
@@ -569,8 +702,18 @@ public:
         : Op(Op), LHS(std::move(LHS)), RHS(std::move(RHS)) {}
     llvm::Value *codegen() override;
     OType getOType() const override;
-    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
-        return std::make_unique<BinaryExprAST>(Op, LHS->clone(typeMap), RHS->clone(typeMap));
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
+                                   CloneMemo& memo) const override {
+        if (auto it = memo.find(this); it != memo.end())
+            return std::unique_ptr<ExprAST>(it->second);
+
+        auto* raw = new BinaryExprAST(Op, nullptr, nullptr);
+        memo[this] = raw;
+
+        raw->LHS = LHS->clone(typeMap, memo);
+        raw->RHS = RHS->clone(typeMap, memo);
+
+        return std::unique_ptr<ExprAST>(raw);
     }
 
     // Getters for use in code generation
@@ -589,10 +732,19 @@ public:
         : Callee(Callee), Args(std::move(Args)) {}
     llvm::Value *codegen() override;
     OType getOType() const override;
-    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
+                                   CloneMemo& memo) const override {
+        if (auto it = memo.find(this); it != memo.end())
+            return std::unique_ptr<ExprAST>(it->second);
+
+        auto* raw = new CallExprAST(Callee, {});
+        memo[this] = raw;
+
         std::vector<std::unique_ptr<ExprAST>> NewArgs;
-        for(const auto& a : Args) NewArgs.push_back(a->clone(typeMap));
-        return std::make_unique<CallExprAST>(Callee, std::move(NewArgs));
+        for(const auto& a : Args) NewArgs.push_back(a->clone(typeMap, memo));
+        raw->Args = std::move(NewArgs);
+
+        return std::unique_ptr<ExprAST>(raw);
     }
 
     // Getters for use in code generation
@@ -612,10 +764,21 @@ public:
         : Object(std::move(Object)), MethodName(MethodName), Args(std::move(Args)) {}
     llvm::Value *codegen() override;
     OType getOType() const override;
-    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
+                                   CloneMemo& memo) const override {
+        if (auto it = memo.find(this); it != memo.end())
+            return std::unique_ptr<ExprAST>(it->second);
+
+        auto* raw = new MethodCallExprAST(nullptr, MethodName, {});
+        memo[this] = raw;
+
+        raw->Object = Object->clone(typeMap, memo);
+
         std::vector<std::unique_ptr<ExprAST>> NewArgs;
-        for(const auto& a : Args) NewArgs.push_back(a->clone(typeMap));
-        return std::make_unique<MethodCallExprAST>(Object->clone(typeMap), MethodName, std::move(NewArgs));
+        for(const auto& a : Args) NewArgs.push_back(a->clone(typeMap, memo));
+        raw->Args = std::move(NewArgs);
+
+        return std::unique_ptr<ExprAST>(raw);
     }
 
     // Getters for use in code generation
@@ -632,10 +795,19 @@ public:
         : Expressions(std::move(Exprs)) {}
     
     llvm::Value *codegen() override;
-    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
+                                   CloneMemo& memo) const override {
+        if (auto it = memo.find(this); it != memo.end())
+            return std::unique_ptr<ExprAST>(it->second);
+
+        auto* raw = new BlockExprAST({});
+        memo[this] = raw;
+
         std::vector<std::unique_ptr<ExprAST>> NewExprs;
-        for(const auto& e : Expressions) NewExprs.push_back(e->clone(typeMap));
-        return std::make_unique<BlockExprAST>(std::move(NewExprs));
+        for(const auto& e : Expressions) NewExprs.push_back(e->clone(typeMap, memo));
+        raw->Expressions = std::move(NewExprs);
+
+        return std::unique_ptr<ExprAST>(raw);
     }
 
     // Getters for use in code generation
@@ -652,8 +824,19 @@ public:
         : Cond(std::move(Cond)), Then(std::move(Then)), Else(std::move(Else)) {}
     llvm::Value *codegen() override;
     OType getOType() const override { return Then->getOType(); }
-    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
-        return std::make_unique<IfExprAST>(Cond->clone(typeMap), Then->clone(typeMap), Else ? Else->clone(typeMap) : nullptr);
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
+                                   CloneMemo& memo) const override {
+        if (auto it = memo.find(this); it != memo.end())
+            return std::unique_ptr<ExprAST>(it->second);
+
+        auto* raw = new IfExprAST(nullptr, nullptr, nullptr);
+        memo[this] = raw;
+
+        raw->Cond = Cond->clone(typeMap, memo);
+        raw->Then = Then->clone(typeMap, memo);
+        raw->Else = Else ? Else->clone(typeMap, memo) : nullptr;
+
+        return std::unique_ptr<ExprAST>(raw);
     }
 
     // Getters for use in code generation
@@ -670,8 +853,9 @@ struct MatchCase {
     MatchCase(std::unique_ptr<ExprAST> Pat, std::unique_ptr<ExprAST> B)
         : Pattern(std::move(Pat)), Body(std::move(B)) {}
         
-    MatchCase clone(const std::map<std::string, OType>& typeMap = {}) const {
-        return MatchCase(Pattern ? Pattern->clone(typeMap) : nullptr, Body->clone(typeMap));
+    MatchCase clone(const std::map<std::string, OType>& typeMap,
+                    CloneMemo& memo) const {
+        return MatchCase(Pattern ? Pattern->clone(typeMap, memo) : nullptr, Body->clone(typeMap, memo));
     }
 };
 
@@ -687,10 +871,21 @@ public:
         if (!Cases.empty() && Cases[0].Body) return Cases[0].Body->getOType();
         return OType(BaseType::Void);
     }
-    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
+                                   CloneMemo& memo) const override {
+        if (auto it = memo.find(this); it != memo.end())
+            return std::unique_ptr<ExprAST>(it->second);
+
+        auto* raw = new MatchExprAST(nullptr, {});
+        memo[this] = raw;
+
         std::vector<MatchCase> NewCases;
-        for (const auto& c : Cases) NewCases.push_back(c.clone(typeMap));
-        return std::make_unique<MatchExprAST>(Cond->clone(typeMap), std::move(NewCases));
+        for (const auto& c : Cases) NewCases.push_back(c.clone(typeMap, memo));
+        raw->Cases = std::move(NewCases);
+
+        raw->Cond = Cond->clone(typeMap, memo);
+
+        return std::unique_ptr<ExprAST>(raw);
     }
 
     // Getters for use in code generation
@@ -712,8 +907,17 @@ public:
         : Name(Name), Init(std::move(Init)), ExplicitType(ExplicitType), HasExplicitType(HasExplicitType), IsConst(IsConst) {}
     llvm::Value *codegen() override;
     bool getIsConst() const { return IsConst; } // <--- New getter
-    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
-        return std::make_unique<VarDeclExprAST>(Name, Init ? Init->clone(typeMap) : nullptr, ExplicitType.substitute(typeMap), HasExplicitType, IsConst);
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
+                                   CloneMemo& memo) const override {
+        if (auto it = memo.find(this); it != memo.end())
+            return std::unique_ptr<ExprAST>(it->second);
+
+        auto* raw = new VarDeclExprAST(Name, nullptr, ExplicitType.substitute(typeMap), HasExplicitType, IsConst);
+        memo[this] = raw;
+
+        raw->Init = Init ? Init->clone(typeMap, memo) : nullptr;
+
+        return std::unique_ptr<ExprAST>(raw);
     }
 
     // Getters for use in code generation
@@ -732,8 +936,18 @@ public:
         : LHS(std::move(LHS)), RHS(std::move(RHS)) {}
     llvm::Value *codegen() override;
     OType getOType() const override { return RHS->getOType(); }
-    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
-        return std::make_unique<AssignmentExprAST>(LHS->clone(typeMap), RHS->clone(typeMap));
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
+                                   CloneMemo& memo) const override {
+        if (auto it = memo.find(this); it != memo.end())
+            return std::unique_ptr<ExprAST>(it->second);
+
+        auto* raw = new AssignmentExprAST(nullptr, nullptr);
+        memo[this] = raw;
+
+        raw->LHS = LHS->clone(typeMap, memo);
+        raw->RHS = RHS->clone(typeMap, memo);
+
+        return std::unique_ptr<ExprAST>(raw);
     }
 
     // Getters for use in code generation
@@ -748,8 +962,17 @@ public:
     ReturnExprAST(std::unique_ptr<ExprAST> RetVal)
         : RetVal(std::move(RetVal)) {}
     llvm::Value *codegen() override;
-    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
-        return std::make_unique<ReturnExprAST>(RetVal ? RetVal->clone(typeMap) : nullptr);
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
+                                   CloneMemo& memo) const override {
+        if (auto it = memo.find(this); it != memo.end())
+            return std::unique_ptr<ExprAST>(it->second);
+
+        auto* raw = new ReturnExprAST(nullptr);
+        memo[this] = raw;
+
+        raw->RetVal = RetVal ? RetVal->clone(typeMap, memo) : nullptr;
+
+        return std::unique_ptr<ExprAST>(raw);
     }
 
     // Getters for use in code generation
@@ -764,8 +987,17 @@ public:
         : Operand(std::move(Operand)) {}
     llvm::Value *codegen() override;
     OType getOType() const override { return OType(BaseType::Void); }
-    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
-        return std::make_unique<DeleteExprAST>(Operand->clone(typeMap));
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
+                                   CloneMemo& memo) const override {
+        if (auto it = memo.find(this); it != memo.end())
+            return std::unique_ptr<ExprAST>(it->second);
+
+        auto* raw = new DeleteExprAST(nullptr);
+        memo[this] = raw;
+
+        raw->Operand = Operand->clone(typeMap, memo);
+
+        return std::unique_ptr<ExprAST>(raw);
     }
 
     // Getters for use in code generation
@@ -780,8 +1012,17 @@ public:
         : Operand(std::move(Operand)) {}
     llvm::Value *codegen() override;
     OType getOType() const override { return Operand->getOType(); }
-    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
-        return std::make_unique<NegateExprAST>(Operand->clone(typeMap));
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
+                                   CloneMemo& memo) const override {
+        if (auto it = memo.find(this); it != memo.end())
+            return std::unique_ptr<ExprAST>(it->second);
+
+        auto* raw = new NegateExprAST(nullptr);
+        memo[this] = raw;
+
+        raw->Operand = Operand->clone(typeMap, memo);
+
+        return std::unique_ptr<ExprAST>(raw);
     }
 
     // Getters for use in code generation
@@ -835,10 +1076,10 @@ inline std::unique_ptr<StructDeclAST> StructDeclAST::clone(const std::map<std::s
     for(const auto& m : Methods) NewMethods.push_back(m->clone(typeMap));
     std::vector<std::unique_ptr<ConstructorAST>> NewConstructors;
     for(const auto& c : Constructors) NewConstructors.push_back(c->clone(typeMap));
-    
+
     std::vector<std::pair<std::string, OType>> NewFields;
     for(const auto& f : Fields) NewFields.push_back(std::make_pair(f.first, f.second.substitute(typeMap)));
-    
+
     return std::make_unique<StructDeclAST>(Name, GenericParams, NewFields, std::move(NewMethods), std::move(NewConstructors));
 }
 
@@ -865,8 +1106,17 @@ public:
     llvm::Value *codegen() override;
     OType getOType() const override { return TargetType; }
 
-    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap = {}) const override {
-        return std::make_unique<CastExprAST>(Operand->clone(typeMap), TargetType.substitute(typeMap));
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
+                                   CloneMemo& memo) const override {
+        if (auto it = memo.find(this); it != memo.end())
+            return std::unique_ptr<ExprAST>(it->second);
+
+        auto* raw = new CastExprAST(nullptr, TargetType.substitute(typeMap));
+        memo[this] = raw;
+
+        raw->Operand = Operand->clone(typeMap, memo);
+
+        return std::unique_ptr<ExprAST>(raw);
     }
 
     // Getters for use in code generation
