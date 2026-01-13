@@ -26,9 +26,14 @@ public:
     // Check if we're in codegen phase (for hard ban)
     bool isInCodegenPhase() const { return inCodegenPhase; }
 
+    // Check if we're in semantic discovery phase
+    bool isInSemanticDiscoveryPhase() const { return inSemanticDiscoveryPhase; }
+
     // Setters for phase tracking
     void enterCodegenPhase() { inCodegenPhase = true; }
     void exitCodegenPhase() { inCodegenPhase = false; }
+    void enterSemanticDiscoveryPhase() { inSemanticDiscoveryPhase = true; }
+    void exitSemanticDiscoveryPhase() { inSemanticDiscoveryPhase = false; }
 
 private:
     // Track ongoing instantiations to prevent infinite recursion
@@ -36,4 +41,7 @@ private:
 
     // Track if we're currently in codegen phase
     bool inCodegenPhase = false;
+
+    // Track if we're currently in semantic discovery phase
+    bool inSemanticDiscoveryPhase = false;
 };

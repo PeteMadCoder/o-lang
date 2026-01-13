@@ -215,10 +215,16 @@ void SemanticWalker::walk(DerefExprAST &E) {
 
 void SemanticWalker::walk(NewExprAST &E) {
     // New expressions might involve generic types
-    // NewExprAST doesn't have getInit() method, it creates new instances
     // Check if this is creating a generic type instance
     if (E.getOType().base == BaseType::Struct && !E.getOType().genericArgs.empty()) {
         enqueueStructInstantiation(E.getOType().structName, E.getOType().genericArgs);
+    }
+
+    // Walk all the argument expressions
+    for (auto& arg : E.getArgs()) {
+        if (arg) {
+            walk(*arg);
+        }
     }
 }
 
@@ -291,14 +297,14 @@ void SemanticWalker::walk(StructDeclAST &S) {
     if (S.isGeneric()) {
         // Store the generic struct for later instantiation
         codeGen.GenericStructRegistry[S.getName()] = S.clone();
-        
+
         // Walk methods and constructors to discover their requirements
         for (auto& method : S.getMethods()) {
             if (method->getBody()) {
                 walk(*method->getBody());
             }
         }
-        
+
         for (auto& constructor : S.getConstructors()) {
             if (constructor->getBody()) {
                 walk(*constructor->getBody());
@@ -311,7 +317,7 @@ void SemanticWalker::walk(StructDeclAST &S) {
                 walk(*method->getBody());
             }
         }
-        
+
         for (auto& constructor : S.getConstructors()) {
             if (constructor->getBody()) {
                 walk(*constructor->getBody());
