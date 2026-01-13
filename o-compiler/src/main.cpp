@@ -20,8 +20,11 @@ extern std::unique_ptr<llvm::Module> TheModule;
 
 #include "CompilerDriver.h"
 
-// Forward declaration for deferred instantiation processing
+// Forward declarations for three-phase architecture
 void processDeferredInstantiations();
+void semanticDiscoveryPhase();
+void validationPhase();
+void codeGenerationPhase();
 
 namespace cl = llvm::cl;
 
@@ -61,9 +64,15 @@ int main(int argc, char** argv) {
     // 3. Process File
     driver.processFile(InputFilename);
 
-    // 4. FLUSH GENERICS (Generate bodies of all instantiated generics)
-    // Now that main is done, generate all the Vector<int> bodies we queued up.
-    processDeferredInstantiations();
+    // 4. NEW THREE-PHASE ARCHITECTURE
+    // Phase 1: Semantic Discovery - Discover all required instantiations
+    semanticDiscoveryPhase();
+
+    // Phase 2: Validation - Validate the semantic graph
+    validationPhase();
+
+    // Phase 3: Code Generation - Generate LLVM IR for all discovered elements
+    codeGenerationPhase();
 
     // 5. Target Setup
     auto TargetTriple = llvm::sys::getDefaultTargetTriple();

@@ -5,6 +5,9 @@
 static thread_local std::unordered_set<const ExprAST*> activeCodegen;
 
 llvm::Value *ExpressionCodeGen::codegen(ExprAST &E) {
+    // Enter codegen phase
+    codeGen.utilCodeGen->enterCodegenPhase();
+
     if (!activeCodegen.insert(&E).second) {
         llvm::errs() << "FATAL: AST cycle detected during codegen\n";
         E.dump();
@@ -72,6 +75,8 @@ llvm::Value *ExpressionCodeGen::codegen(ExprAST &E) {
     }
 
     activeCodegen.erase(&E);
+    // Exit codegen phase
+    codeGen.utilCodeGen->exitCodegenPhase();
     return result;
 }
 

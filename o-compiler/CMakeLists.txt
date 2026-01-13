@@ -23,6 +23,9 @@ set(SOURCES
     src/codegen/FunctionCodeGen.cpp
     src/codegen/TypeCodeGen.cpp
     src/codegen/UtilityCodeGen.cpp
+    src/codegen/TypeResolver.cpp
+    src/codegen/InstantiationManager.cpp
+    src/codegen/SemanticWalker.cpp
 )
 
 add_executable(oc ${SOURCES})

@@ -145,6 +145,9 @@ std::string UtilityCodeGen::mangleGenericName(const std::string& baseName, const
 }
 
 llvm::Type* UtilityCodeGen::instantiateStruct(const std::string& genericName, const std::vector<OType>& typeArgs) {
+    // HARD BAN: Assert that we're not in codegen phase when instantiating
+    assert(!isInCodegenPhase() && "Instantiation during codegen phase is forbidden!");
+
     if (codeGen.GenericStructRegistry.count(genericName) == 0) return nullptr;
 
     std::string mangledName = mangleGenericName(genericName, typeArgs);

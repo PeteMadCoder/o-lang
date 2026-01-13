@@ -3,6 +3,9 @@
 #include "codegen/FunctionCodeGen.h"
 #include "codegen/TypeCodeGen.h"
 #include "codegen/UtilityCodeGen.h"
+#include "codegen/TypeResolver.h"
+#include "codegen/InstantiationManager.h"
+#include "codegen/SemanticWalker.h"
 
 // Global Compiler State - still needed for backward compatibility
 std::unique_ptr<llvm::LLVMContext> TheContext;
@@ -197,11 +200,17 @@ llvm::Function *FunctionAST::codegen() {
 
 void StructDeclAST::codegen() {
     if (!GlobalCodeGen) return;
+    // First, resolve semantics (no LLVM IR generation)
+    GlobalCodeGen->typeResolver->resolve(*this);
+    // Then, generate LLVM IR
     GlobalCodeGen->typeCodeGen->codegen(*this);
 }
 
 void ClassDeclAST::codegen() {
     if (!GlobalCodeGen) return;
+    // First, resolve semantics (no LLVM IR generation)
+    GlobalCodeGen->typeResolver->resolve(*this);
+    // Then, generate LLVM IR
     GlobalCodeGen->typeCodeGen->codegen(*this);
 }
 
@@ -379,6 +388,50 @@ llvm::Function *GetFunctionFromPrototype(std::string Name) {
 }
 
 void processDeferredInstantiations() {
+    if (GlobalCodeGen) {
+        GlobalCodeGen->processDeferredInstantiations();
+    }
+}
+
+// New three-phase architecture functions
+void semanticDiscoveryPhase() {
+    if (GlobalCodeGen) {
+        // Create a semantic walker to discover all required instantiations
+        std::unique_ptr<SemanticWalker> semanticWalker = std::make_unique<SemanticWalker>(*GlobalCodeGen);
+
+        // Process all pending instantiations until fixed point is reached
+        while (GlobalCodeGen->instantiationManager->hasPending()) {
+            InstantiationRequest req = GlobalCodeGen->instantiationManager->dequeue();
+
+            // Process the instantiation request semantically (no LLVM IR generation)
+            if (req.kind == InstantiationRequest::Struct) {
+                // Look up the generic struct template
+                auto it = GlobalCodeGen->GenericStructRegistry.find(req.baseName);
+                if (it != GlobalCodeGen->GenericStructRegistry.end()) {
+                    // Instantiate the struct with the given type arguments
+                    GlobalCodeGen->utilCodeGen->instantiateStruct(req.baseName, req.typeArgs);
+                }
+            }
+
+            // Mark this instantiation as processed
+            GlobalCodeGen->instantiationManager->markAsInstantiated(req);
+        }
+
+        // Freeze the instantiation manager to prevent further additions during codegen
+        GlobalCodeGen->instantiationManager->freeze();
+    }
+}
+
+void validationPhase() {
+    // In this phase, we could validate that all required instantiations were successful
+    // For now, we'll just ensure the instantiation manager is frozen
+    if (GlobalCodeGen) {
+        assert(GlobalCodeGen->instantiationManager->isFrozen() && "Instantiation manager should be frozen before validation");
+    }
+}
+
+void codeGenerationPhase() {
+    // This is the existing processDeferredInstantiations call
     if (GlobalCodeGen) {
         GlobalCodeGen->processDeferredInstantiations();
     }

@@ -6,6 +6,7 @@
 #include <vector>
 #include <string>
 #include <memory>
+#include <queue>
 
 // LLVM Headers
 #include "llvm/ADT/APFloat.h"
@@ -25,9 +26,12 @@ class ExpressionCodeGen;
 class StatementCodeGen;
 class FunctionCodeGen;
 class TypeCodeGen;
+class TypeResolver;
+class SemanticWalker;
 class UtilityCodeGen;
+class InstantiationManager;
 
-// Deferred Instantiation Queue
+// Deferred Instantiation Queue (deprecated - kept for transition)
 struct PendingInstantiation {
     std::unique_ptr<StructDeclAST> AST;
     std::string MangledName;
@@ -61,14 +65,18 @@ public:
     // Global registry for function prototypes to enable lazy symbol resolution during generic instantiation
     std::map<std::string, std::shared_ptr<PrototypeAST>> GlobalFunctionProtos;
 
-    // Deferred Instantiation Queue
+    // Deferred Instantiation Queue (deprecated - kept for transition)
     std::vector<PendingInstantiation> InstantiationQueue;
+
+    // New instantiation manager
+    std::unique_ptr<InstantiationManager> instantiationManager;
 
     // Module instances
     std::unique_ptr<ExpressionCodeGen> exprCodeGen;
     std::unique_ptr<StatementCodeGen> stmtCodeGen;
     std::unique_ptr<FunctionCodeGen> funcCodeGen;
     std::unique_ptr<TypeCodeGen> typeCodeGen;
+    std::unique_ptr<TypeResolver> typeResolver;
     std::unique_ptr<UtilityCodeGen> utilCodeGen;
 
     CodeGenerator();

@@ -4,12 +4,16 @@
 #include "FunctionCodeGen.h"
 #include "TypeCodeGen.h"
 #include "UtilityCodeGen.h"
+#include "TypeResolver.h"
+#include "InstantiationManager.h"
 
 CodeGenerator::CodeGenerator() {
+    instantiationManager = std::make_unique<InstantiationManager>();
     exprCodeGen = std::make_unique<ExpressionCodeGen>(*this);
     stmtCodeGen = std::make_unique<StatementCodeGen>(*this);
     funcCodeGen = std::make_unique<FunctionCodeGen>(*this);
     typeCodeGen = std::make_unique<TypeCodeGen>(*this);
+    typeResolver = std::make_unique<TypeResolver>(*this);
     utilCodeGen = std::make_unique<UtilityCodeGen>(*this);
 }
 

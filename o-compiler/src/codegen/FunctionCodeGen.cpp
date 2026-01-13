@@ -44,6 +44,9 @@ llvm::Function *FunctionCodeGen::codegen(PrototypeAST &P) {
 }
 
 llvm::Function *FunctionCodeGen::codegen(FunctionAST &F) {
+    // Enter codegen phase
+    codeGen.utilCodeGen->enterCodegenPhase();
+
     std::string functionName = F.getPrototype()->getName();
 
     // Register the prototype in the global registry for external functions
@@ -61,10 +64,18 @@ llvm::Function *FunctionCodeGen::codegen(FunctionAST &F) {
         // If the function doesn't exist in the module, create it from the prototype
         TheFunction = codegen(*F.getPrototype());
     }
-    if (!TheFunction) return nullptr;
+    if (!TheFunction) {
+        // Exit codegen phase before returning
+        codeGen.utilCodeGen->exitCodegenPhase();
+        return nullptr;
+    }
 
     // For external function declarations (no body), just return the function
-    if (!F.getBody()) return TheFunction;
+    if (!F.getBody()) {
+        // Exit codegen phase before returning
+        codeGen.utilCodeGen->exitCodegenPhase();
+        return TheFunction;
+    }
 
     // If we already have a valid insertion point in the right function, use it!
     // This happens during generic instantiation when StructDeclAST sets the insertion point
@@ -98,6 +109,8 @@ llvm::Function *FunctionCodeGen::codegen(FunctionAST &F) {
                 }
             }
             llvm::verifyFunction(*TheFunction);
+            // Exit codegen phase before returning
+            codeGen.utilCodeGen->exitCodegenPhase();
             return TheFunction;
         } else {
             // Body->codegen() returned nullptr, check if we need to add a return for void functions
@@ -105,6 +118,8 @@ llvm::Function *FunctionCodeGen::codegen(FunctionAST &F) {
                 codeGen.Builder->CreateRetVoid();
             }
             llvm::verifyFunction(*TheFunction);
+            // Exit codegen phase before returning
+            codeGen.utilCodeGen->exitCodegenPhase();
             return TheFunction;
         }
     } else {
@@ -140,6 +155,8 @@ llvm::Function *FunctionCodeGen::codegen(FunctionAST &F) {
                 }
             }
             llvm::verifyFunction(*TheFunction);
+            // Exit codegen phase before returning
+            codeGen.utilCodeGen->exitCodegenPhase();
             return TheFunction;
         } else {
             // Body->codegen() returned nullptr, check if we need to add a return for void functions
@@ -147,11 +164,15 @@ llvm::Function *FunctionCodeGen::codegen(FunctionAST &F) {
                 codeGen.Builder->CreateRetVoid();
             }
             llvm::verifyFunction(*TheFunction);
+            // Exit codegen phase before returning
+            codeGen.utilCodeGen->exitCodegenPhase();
             return TheFunction;
         }
     }
 
     TheFunction->eraseFromParent();
+    // Exit codegen phase before returning
+    codeGen.utilCodeGen->exitCodegenPhase();
     return nullptr;
 }
 

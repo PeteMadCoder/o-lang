@@ -19,11 +19,21 @@ public:
     llvm::StructType* getSliceType(llvm::Type* ElementType);
     void createBoundsCheck(llvm::Value *IndexVal, llvm::Value *ArraySizeVal);
     llvm::Function *getTrapFunc();
-    
+
     // Accessor for the instantiation queue (accessed through codeGen)
     std::vector<PendingInstantiation>& getInstantiationQueue();
-    
+
+    // Check if we're in codegen phase (for hard ban)
+    bool isInCodegenPhase() const { return inCodegenPhase; }
+
+    // Setters for phase tracking
+    void enterCodegenPhase() { inCodegenPhase = true; }
+    void exitCodegenPhase() { inCodegenPhase = false; }
+
 private:
     // Track ongoing instantiations to prevent infinite recursion
     std::set<std::string> InProgressInstantiations;
+
+    // Track if we're currently in codegen phase
+    bool inCodegenPhase = false;
 };

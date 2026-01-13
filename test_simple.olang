@@ -1,0 +1,5 @@
+// Simple test for the new compiler architecture
+fn main() -> int {
+    println("Hello, World!");
+    return 0;
+}
