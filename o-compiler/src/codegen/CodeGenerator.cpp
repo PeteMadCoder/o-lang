@@ -131,30 +131,63 @@ void CodeGenerator::logError(const char *Str) {
 }
 
 void CodeGenerator::processDeferredInstantiations() {
+    // 1. SAVE STATE (Crucial Fix)
+    llvm::BasicBlock* savedBlock = Builder->GetInsertBlock();
+    llvm::BasicBlock::iterator savedPoint = Builder->GetInsertPoint();
+
+    // Save ScopeStack and ImmutableVars to restore later
+    std::vector<ScopeLayer> savedScopeStack = ScopeStack;
+    std::vector<std::set<std::string>> savedImmutableVars = ImmutableVars;
+
     // Phase 1: Set phase to InstantiatingGenerics to process struct skeletons
     CompilerPhase oldPhase = CurrentPhase;
     CurrentPhase = CompilerPhase::InstantiatingGenerics;
 
     // Process all pending instantiations to create struct skeletons and method prototypes
-    while (!utilCodeGen->getInstantiationQueue().empty()) {
-        // Move all pending items to a local batch
-        std::vector<PendingInstantiation> CurrentBatch;
-        CurrentBatch.swap(utilCodeGen->getInstantiationQueue());
-
-        // Process this batch - only create struct layouts and method prototypes
-        for (auto& Item : CurrentBatch) {
-            // The struct skeleton and prototypes should already be created by instantiateStructSkeleton
-            // We just need to ensure all necessary instantiations are processed
-            std::cerr << "Processing struct skeleton: " << Item.MangledName << "\n";
-        }
+    // Don't move the items, just iterate over them
+    for (auto& Item : utilCodeGen->getInstantiationQueue()) {
+        // The struct skeleton and prototypes should already be created by instantiateStructSkeleton
+        // We just need to ensure all necessary instantiations are processed
+        std::cerr << "Processing struct skeleton: " << Item.MangledName << "\n";
     }
 
     // Phase 2: Set phase to GeneratingBodies to process method bodies
     CurrentPhase = CompilerPhase::GeneratingBodies;
 
     // Generate all method and constructor bodies
-    utilCodeGen->generateInstantiatedBodies();
+    // We need to temporarily clear the state for the instantiated functions
+    // but we'll restore it immediately after
+    {
+        // Temporarily reset state for the actual code generation of instantiated functions
+        // Save current state
+        std::vector<ScopeLayer> tempScopeStack = ScopeStack;
+        std::vector<std::set<std::string>> tempImmutableVars = ImmutableVars;
+
+        // Initialize with empty global scope for the instantiated functions
+        ScopeStack.clear();
+        ImmutableVars.clear();
+        ImmutableVars.push_back(std::set<std::string>()); // Global scope
+
+        // Generate the instantiated bodies
+        utilCodeGen->generateInstantiatedBodies();
+
+        // Restore the original state
+        ScopeStack = tempScopeStack;
+        ImmutableVars = tempImmutableVars;
+    }
+
+    // Clear the queue after bodies are done
+    utilCodeGen->getInstantiationQueue().clear();
 
     // Restore the original phase
     CurrentPhase = oldPhase;
+
+    // 2. RESTORE STATE
+    ScopeStack = savedScopeStack;
+    ImmutableVars = savedImmutableVars;
+
+    // Restore Insert Point (Check if savedBlock exists, as it might be null in global scope)
+    if (savedBlock) {
+        Builder->SetInsertPoint(savedBlock, savedPoint);
+    }
 }

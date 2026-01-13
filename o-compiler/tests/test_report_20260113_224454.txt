@@ -1,5 +1,5 @@
 O Language Compiler Comprehensive Test Suite
-Run Date: Tue Jan 13 08:53:54 PM WET 2026
+Run Date: Tue Jan 13 10:44:54 PM WET 2026
 ========================================
 RUN  basic_helloworld: Simple main function
 PASS basic_helloworld: Expected 'success', got 'success'
@@ -36,9 +36,9 @@ PASS mem_pointer: Expected 'failure', got 'failure'
 RUN  mem_unsafe: Unsafe block
 PASS mem_unsafe: Expected 'success', got 'success'
 RUN  gen_simple: Simple generic
-FAIL gen_simple: Expected 'success', got 'failure'
+PASS gen_simple: Expected 'success', got 'success'
 RUN  gen_multi: Multi-parameter generic
-FAIL gen_multi: Expected 'success', got 'failure'
+PASS gen_multi: Expected 'success', got 'success'
 RUN  op_overload: Operator overload
 PASS op_overload: Expected 'success', got 'success'
 RUN  stdlib_import: Import statement

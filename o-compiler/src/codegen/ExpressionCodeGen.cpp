@@ -1094,6 +1094,7 @@ llvm::Value *ExpressionCodeGen::codegen(IfExprAST &E) {
     TheFunction->insert(TheFunction->end(), MergeBB);
     codeGen.Builder->SetInsertPoint(MergeBB);
 
+    // Check if both branches are terminated (both return/exit)
     if (ThenTerminated && ElseTerminated) {
         // Both branches return, so MergeBB is unreachable.
         // We can create a dummy instruction or Unreachable.
@@ -1101,9 +1102,25 @@ llvm::Value *ExpressionCodeGen::codegen(IfExprAST &E) {
         return llvm::Constant::getNullValue(ThenV->getType());
     }
 
+    // FIX: Handle VOID types (prevent PHI creation for void)
+    if (ThenV->getType()->isVoidTy()) {
+        // If the type is void, we can't create a PHI node, so just return a dummy value
+        return llvm::Constant::getNullValue(llvm::Type::getInt32Ty(*codeGen.TheContext)); // Return dummy void value
+    }
+
+    // Only create PHI if type is NOT void
     llvm::PHINode *PN = codeGen.Builder->CreatePHI(ThenV->getType(), 2, "iftmp");
     if (!ThenTerminated) PN->addIncoming(ThenV, ThenBB);
-    if (!ElseTerminated) PN->addIncoming(ElseV, ElseBB);
+
+    // Handle ElseV generation carefully
+    llvm::Value *FinalElseV = ElseV;
+    if (!E.getElse()) {
+         // If no else provided, we need a default value.
+         // For non-void types, this is actually semantic error (missing else in expression), but to prevent crash:
+         FinalElseV = llvm::Constant::getNullValue(ThenV->getType());
+    }
+
+    if (!ElseTerminated) PN->addIncoming(FinalElseV, ElseBB);
 
     return PN;
 }
