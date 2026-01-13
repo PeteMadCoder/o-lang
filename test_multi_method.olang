@@ -1,0 +1,26 @@
+struct SimpleContainer<T> {
+    value: T;
+    count: int;
+
+    new(val: T) {
+        this.value = val;
+        this.count = 1;
+    }
+
+    fn get() -> T {
+        return this.value;
+    }
+
+    fn increment_count() {
+        this.count = this.count + 1;
+    }
+
+    fn get_count() -> int {
+        return this.count;
+    }
+}
+
+fn main() -> int {
+    var container = new SimpleContainer<int>(42);
+    return container.get();
+}
