@@ -44,6 +44,13 @@ struct ScopeLayer {
     std::vector<llvm::AllocaInst *> cleanupVars; // Variables to free on exit
 };
 
+// Compiler phase enumeration for strict phase separation
+enum class CompilerPhase {
+    Parsing,
+    InstantiatingGenerics,
+    GeneratingBodies
+};
+
 // Main Code Generator class that orchestrates the different modules
 class CodeGenerator {
 public:
@@ -51,6 +58,9 @@ public:
     llvm::LLVMContext *TheContext;
     llvm::IRBuilder<> *Builder;
     llvm::Module *TheModule;
+
+    // Compiler phase tracking
+    CompilerPhase CurrentPhase = CompilerPhase::Parsing;
 
     // Scope management
     std::vector<ScopeLayer> ScopeStack;

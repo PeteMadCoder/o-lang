@@ -1,0 +1,14 @@
+import "std/vector.olang";
+
+fn main() -> int {
+    var vec = new Vector<int>();
+    vec.push(10);
+    vec.push(20);
+    vec.push(30);
+    
+    var first = vec.pop();  // Should return 30
+    var second = vec.pop(); // Should return 20
+    var third = vec.pop();  // Should return 10
+    
+    return first + second + third; // Should return 60
+}

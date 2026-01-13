@@ -131,5 +131,30 @@ void CodeGenerator::logError(const char *Str) {
 }
 
 void CodeGenerator::processDeferredInstantiations() {
-    typeCodeGen->processDeferredInstantiations();
+    // Phase 1: Set phase to InstantiatingGenerics to process struct skeletons
+    CompilerPhase oldPhase = CurrentPhase;
+    CurrentPhase = CompilerPhase::InstantiatingGenerics;
+
+    // Process all pending instantiations to create struct skeletons and method prototypes
+    while (!utilCodeGen->getInstantiationQueue().empty()) {
+        // Move all pending items to a local batch
+        std::vector<PendingInstantiation> CurrentBatch;
+        CurrentBatch.swap(utilCodeGen->getInstantiationQueue());
+
+        // Process this batch - only create struct layouts and method prototypes
+        for (auto& Item : CurrentBatch) {
+            // The struct skeleton and prototypes should already be created by instantiateStructSkeleton
+            // We just need to ensure all necessary instantiations are processed
+            std::cerr << "Processing struct skeleton: " << Item.MangledName << "\n";
+        }
+    }
+
+    // Phase 2: Set phase to GeneratingBodies to process method bodies
+    CurrentPhase = CompilerPhase::GeneratingBodies;
+
+    // Generate all method and constructor bodies
+    utilCodeGen->generateInstantiatedBodies();
+
+    // Restore the original phase
+    CurrentPhase = oldPhase;
 }

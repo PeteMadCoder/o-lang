@@ -705,10 +705,9 @@ llvm::Value *ExpressionCodeGen::codegen(MethodCallExprAST &E) {
     OType ObjType = E.getObject()->getOType();
     std::string StructName = ObjType.structName;
 
-    // Handle generic types - ensure proper instantiation
+    // Handle generic types - during code generation phase, we should not trigger new instantiations
+    // Instead, we should expect that all necessary instantiations have been processed
     if (!ObjType.genericArgs.empty()) {
-        // Trigger instantiation of the generic struct if needed
-        codeGen.utilCodeGen->instantiateStruct(ObjType.structName, ObjType.genericArgs);
         StructName = codeGen.utilCodeGen->mangleGenericName(ObjType.structName, ObjType.genericArgs);
     } else if (StructName.empty()) {
         // Check if this might be a variable whose type we need to look up
@@ -718,7 +717,8 @@ llvm::Value *ExpressionCodeGen::codegen(MethodCallExprAST &E) {
             if (storedType.base == BaseType::Struct) {
                 StructName = storedType.structName;
                 if (!storedType.genericArgs.empty()) {
-                    codeGen.utilCodeGen->instantiateStruct(storedType.structName, storedType.genericArgs);
+                    // During code generation phase, we should not trigger new instantiations
+                    // Instead, we should expect that all necessary instantiations have been processed
                     StructName = codeGen.utilCodeGen->mangleGenericName(storedType.structName, storedType.genericArgs);
                 }
             }
@@ -755,45 +755,13 @@ llvm::Value *ExpressionCodeGen::codegen(MethodCallExprAST &E) {
         CalleeF = codeGen.utilCodeGen->getFunctionFromPrototype(MangledName);
     }
 
-    // If still not found and we have generic args, try to force instantiation
+    // If still not found and we have generic args, we should have already processed them during instantiation phase
     if (!CalleeF && !ObjType.genericArgs.empty()) {
-        // Trigger instantiation to ensure method prototypes are generated
-        codeGen.utilCodeGen->instantiateStruct(ObjType.structName, ObjType.genericArgs);
-
-        // Try again after instantiation
-        CalleeF = codeGen.TheModule->getFunction(MangledName);
-        if (!CalleeF) {
-            CalleeF = codeGen.utilCodeGen->getFunctionFromPrototype(MangledName);
-        }
-
-        // If still not found, also try with corrected method name (in case instantiation created function with corrected name)
-        if (!CalleeF) {
-            std::string originalMethodName = E.getMethodName();
-            std::string correctedMethodName = originalMethodName;
-            if (originalMethodName.length() > 4) { // At least "int_"
-                if (originalMethodName.substr(0, 4) == "int_") {
-                    correctedMethodName = originalMethodName.substr(4); // Remove "int_"
-                } else if (originalMethodName.substr(0, 5) == "bool_") {
-                    correctedMethodName = originalMethodName.substr(5); // Remove "bool_"
-                } else if (originalMethodName.substr(0, 6) == "float_") {
-                    correctedMethodName = originalMethodName.substr(6); // Remove "float_"
-                } else if (originalMethodName.substr(0, 5) == "char_") {
-                    correctedMethodName = originalMethodName.substr(5); // Remove "char_"
-                } else if (originalMethodName.substr(0, 5) == "byte_") {
-                    correctedMethodName = originalMethodName.substr(5); // Remove "byte_"
-                }
-            }
-
-            // If we corrected the method name, try looking up with the corrected name after instantiation
-            if (correctedMethodName != originalMethodName) {
-                std::string correctedMangledName = StructName + "_" + correctedMethodName;
-                CalleeF = codeGen.TheModule->getFunction(correctedMangledName);
-
-                if (!CalleeF) {
-                    CalleeF = codeGen.utilCodeGen->getFunctionFromPrototype(correctedMangledName);
-                }
-            }
-        }
+        // During code generation phase, we should not trigger new instantiations
+        // Instead, we should expect that all necessary instantiations have been processed
+        // Log an error if the function is still not found
+        codeGen.logError(("Method not found after instantiation phase: " + MangledName).c_str());
+        return nullptr;
     }
 
     // If still not found, try a workaround for the method name mangling issue

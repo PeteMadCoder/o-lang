@@ -1,0 +1,37 @@
+// Test file to verify the generic instantiation fix
+struct Vector<T> {
+    data: T[];
+    count: int;
+    capacity: int;
+}
+
+fn Vector<T>_new(this: Vector<T>*) {
+    this.data = new T[10];
+    this.count = 0;
+    this.capacity = 10;
+}
+
+fn Vector<T>_push(this: Vector<T>*, value: T) {
+    if (this.count >= this.capacity) {
+        // Resize logic would go here
+    }
+    this.data[this.count] = value;
+    this.count = this.count + 1;
+}
+
+fn Vector<T>_pop(this: Vector<T>*): T {
+    if (this.count <= 0) {
+        exit(1);  // This was causing the stack overflow
+    }
+    this.count = this.count - 1;
+    return this.data[this.count];
+}
+
+fn main() {
+    var vec: Vector<int>* = new Vector<int>();
+    vec.new();
+    vec.push(42);
+    vec.push(24);
+    var result = vec.pop();
+    IO.println_int(result);  // Should print 24
+}

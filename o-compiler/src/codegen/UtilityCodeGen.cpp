@@ -13,6 +13,20 @@ llvm::Function *UtilityCodeGen::getFreeFunc() {
     return FreeF;
 }
 
+void UtilityCodeGen::enforceInstantiationPhase(const std::string& context) {
+    if (codeGen.CurrentPhase != CompilerPhase::InstantiatingGenerics &&
+        codeGen.CurrentPhase != CompilerPhase::Parsing) {
+        // Allow instantiation during parsing phase (for semantic discovery) and instantiation phase
+        // but not during code generation phase
+        std::string errorMsg = "Generic instantiation attempted outside of instantiation/parsing phase";
+        if (!context.empty()) {
+            errorMsg += " (" + context + ")";
+        }
+        codeGen.logError(errorMsg.c_str());
+        // For now, we'll just return - in a production compiler you might want to throw an exception
+    }
+}
+
 llvm::Type* UtilityCodeGen::getLLVMType(const OType& t) {
     // Validate the input OType to prevent invalid array sizes from causing std::bad_array_new_length
     for (int arraySize : t.arraySizes) {
@@ -145,6 +159,9 @@ std::string UtilityCodeGen::mangleGenericName(const std::string& baseName, const
 }
 
 llvm::Type* UtilityCodeGen::instantiateStruct(const std::string& genericName, const std::vector<OType>& typeArgs) {
+    // Enforce that instantiation only happens during the instantiation phase
+    enforceInstantiationPhase("instantiateStruct: " + genericName);
+
     if (codeGen.GenericStructRegistry.count(genericName) == 0) return nullptr;
 
     std::string mangledName = mangleGenericName(genericName, typeArgs);
@@ -614,6 +631,552 @@ llvm::Type* UtilityCodeGen::instantiateStruct(const std::string& genericName, co
     InProgressInstantiations.erase(mangledName);
 
     return structType;
+}
+
+llvm::Type* UtilityCodeGen::instantiateStructSkeleton(const std::string& genericName, const std::vector<OType>& typeArgs) {
+    // Enforce that instantiation only happens during the instantiation phase
+    enforceInstantiationPhase("instantiateStructSkeleton: " + genericName);
+
+    if (codeGen.GenericStructRegistry.count(genericName) == 0) return nullptr;
+
+    std::string mangledName = mangleGenericName(genericName, typeArgs);
+
+    // Check if we're already in the process of instantiating this type
+    if (InProgressInstantiations.count(mangledName)) {
+        std::cerr << "Warning: Recursive instantiation detected for " << mangledName << ", returning existing type if available\n";
+        if (codeGen.StructTypes.count(mangledName)) {
+            return codeGen.StructTypes[mangledName];
+        }
+        return nullptr;
+    }
+
+    if (codeGen.StructTypes.count(mangledName)) {
+        // Already instantiated, return the existing type
+        return codeGen.StructTypes[mangledName];
+    }
+
+    // Mark this instantiation as in-progress
+    InProgressInstantiations.insert(mangledName);
+
+    const auto& genericAST = codeGen.GenericStructRegistry[genericName];
+    if (genericAST->getGenericParams().size() != typeArgs.size()) {
+        codeGen.logError(("Incorrect number of type arguments for " + genericName).c_str());
+        InProgressInstantiations.erase(mangledName);
+        return nullptr;
+    }
+
+    std::map<std::string, OType> typeMap;
+    for (size_t i = 0; i < genericAST->getGenericParams().size(); ++i) {
+        typeMap[genericAST->getGenericParams()[i]] = typeArgs[i];
+    }
+
+    auto newAST = genericAST->clone(typeMap);
+    if (!newAST) {
+        fprintf(stderr, "Error: Failed to clone generic AST for %s\n", mangledName.c_str());
+        InProgressInstantiations.erase(mangledName);
+        return nullptr;
+    }
+    newAST->setName(mangledName);
+    newAST->makeConcrete();
+
+    // GENERATE TYPE LAYOUT (We need the llvm::StructType immediately)
+    std::vector<llvm::Type*> fieldTypes;
+    std::vector<FieldInfo> fieldInfos;
+
+    size_t offset = 0;
+    for (const auto& field : newAST->getFields()) {
+        // Explicitly substitute field types to ensure proper generic instantiation
+        OType substitutedFieldType = field.second.substitute(typeMap);
+
+        // Validate the substituted field type before processing
+        bool hasInvalidArraySize = false;
+        for (int arraySize : substitutedFieldType.arraySizes) {
+            if (arraySize < 0 || arraySize == 0) {  // Both negative and zero are invalid for fixed arrays
+                fprintf(stderr, "Warning: Invalid array size %d in field type, skipping field\n", arraySize);
+                hasInvalidArraySize = true;
+                break;
+            }
+            // Also check for extremely large array sizes
+            if (arraySize > 100000000) {  // 100 million - very conservative limit
+                fprintf(stderr, "Warning: Array size %d is extremely large, skipping field\n", arraySize);
+                hasInvalidArraySize = true;
+                break;
+            }
+        }
+
+        if (hasInvalidArraySize) {
+            continue; // Skip this field
+        }
+
+        // Validate the substitutedFieldType before calling getLLVMType
+        // Check for any invalid array sizes that might cause std::bad_array_new_length
+        bool isValidType = true;
+        for (int arraySize : substitutedFieldType.arraySizes) {
+            if (arraySize < -1 || arraySize == 0) {  // -1 is valid for slices, positive numbers are valid for fixed arrays
+                fprintf(stderr, "Error: Invalid array size %d in substituted field type for field %s in struct %s\n",
+                        arraySize, field.first.c_str(), mangledName.c_str());
+                isValidType = false;
+                break;
+            }
+            // Check for extremely large array sizes that could cause allocation issues
+            if (arraySize > 100000000) {  // 100 million - conservative limit
+                fprintf(stderr, "Error: Array size %d is too large in substituted field type for field %s in struct %s\n",
+                        arraySize, field.first.c_str(), mangledName.c_str());
+                isValidType = false;
+                break;
+            }
+        }
+
+        if (!isValidType) {
+            fprintf(stderr, "Skipping field %s due to invalid type in struct %s\n", field.first.c_str(), mangledName.c_str());
+            continue; // Skip this field
+        }
+
+        llvm::Type* fieldType = getLLVMType(substitutedFieldType);
+        if (!fieldType) {
+            // If we can't get the LLVM type, try instantiating dependent generic types first
+            if (substitutedFieldType.base == BaseType::Struct && !substitutedFieldType.genericArgs.empty()) {
+                // Check for potential infinite recursion
+                std::string depMangledName = mangleGenericName(substitutedFieldType.structName, substitutedFieldType.genericArgs);
+                if (depMangledName.length() > 1000) {  // Prevent extremely long names that might cause issues
+                    fprintf(stderr, "Error: Mangled name too long, potential infinite recursion: %s\n", depMangledName.c_str());
+                    InProgressInstantiations.erase(mangledName);
+                    return nullptr;
+                }
+
+                if (InProgressInstantiations.count(depMangledName)) {
+                    fprintf(stderr, "Error: Circular dependency detected in generic instantiation: %s\n", depMangledName.c_str());
+                    InProgressInstantiations.erase(mangledName);
+                    return nullptr;
+                }
+
+                llvm::Type* depType = instantiateStructSkeleton(substitutedFieldType.structName, substitutedFieldType.genericArgs);
+                if (depType) {
+                    fieldType = getLLVMType(substitutedFieldType);
+                }
+            }
+            if (!fieldType) {
+                fprintf(stderr, "Error: Could not get LLVM type for field %s in struct %s, skipping\n", field.first.c_str(), mangledName.c_str());
+                continue; // Error
+            }
+        }
+
+        // Additional validation: make sure fieldType is valid before adding to vector
+        if (!fieldType) {
+            fprintf(stderr, "Error: fieldType is null for field %s in struct %s, skipping\n", field.first.c_str(), mangledName.c_str());
+            continue;
+        }
+
+        fieldTypes.push_back(fieldType);
+
+        FieldInfo info;
+        info.name = field.first;
+        info.type = substitutedFieldType;  // Use the substituted type
+        info.offset = offset;
+        fieldInfos.push_back(info);
+
+        // Simple offset calculation (no padding for now)
+        if (substitutedFieldType.base == BaseType::Int || substitutedFieldType.base == BaseType::Float) offset += 4;
+        else if (substitutedFieldType.base == BaseType::Char || substitutedFieldType.base == BaseType::Byte || substitutedFieldType.base == BaseType::Bool) offset += 1;
+        else offset += 8; // pointers and other types
+    }
+
+    // Create LLVM struct type
+    llvm::StructType* structType = llvm::StructType::create(*codeGen.TheContext, mangledName);
+    codeGen.StructTypes[mangledName] = structType;
+
+    // Validate field types before setting the body
+    bool hasInvalidType = false;
+    for (auto* fieldType : fieldTypes) {
+        if (!fieldType) {
+            fprintf(stderr, "Error: Null field type found in struct %s\n", mangledName.c_str());
+            hasInvalidType = true;
+            break;
+        }
+    }
+
+    if (hasInvalidType) {
+        fprintf(stderr, "Error: Invalid field types found, skipping struct body for %s\n", mangledName.c_str());
+        InProgressInstantiations.erase(mangledName);
+        return nullptr;
+    }
+
+    // Additional validation: check for extremely large number of fields
+    if (fieldTypes.size() > 10000) {
+        fprintf(stderr, "Error: Too many fields (%zu) in struct %s, likely a recursion issue\n", fieldTypes.size(), mangledName.c_str());
+        InProgressInstantiations.erase(mangledName);
+        return nullptr;
+    }
+
+    // Additional validation before setting struct body
+    if (fieldTypes.empty()) {
+        fprintf(stderr, "Warning: No fields found for struct %s, using empty struct\n", mangledName.c_str());
+        structType->setBody({});
+    } else {
+        // Validate all field types before setting body
+        bool allValid = true;
+        for (size_t i = 0; i < fieldTypes.size(); ++i) {
+            if (!fieldTypes[i]) {
+                fprintf(stderr, "Error: Field %zu in struct %s has null type\n", i, mangledName.c_str());
+                allValid = false;
+                break;
+            }
+        }
+
+        if (!allValid) {
+            fprintf(stderr, "Error: Invalid field types in struct %s, using empty struct\n", mangledName.c_str());
+            structType->setBody({});
+        } else {
+            // Check for potential size issues that might cause std::bad_array_new_length
+            if (fieldTypes.size() > 1000000) {  // Very conservative limit
+                fprintf(stderr, "Error: Too many fields (%zu) in struct %s\n", fieldTypes.size(), mangledName.c_str());
+                structType->setBody({});
+            } else {
+                // Additional safety check: validate each field type more thoroughly
+                bool hasProblematicType = false;
+                for (size_t i = 0; i < fieldTypes.size(); ++i) {
+                    if (fieldTypes[i]->isFunctionTy() || fieldTypes[i]->isVoidTy()) {
+                        fprintf(stderr, "Warning: Skipping problematic field type at index %zu in struct %s\n", i, mangledName.c_str());
+                        hasProblematicType = true;
+                        break;
+                    }
+                }
+
+                if (hasProblematicType) {
+                    // Create a struct with only valid field types
+                    std::vector<llvm::Type*> validFieldTypes;
+                    for (auto* ft : fieldTypes) {
+                        if (ft && !ft->isFunctionTy() && !ft->isVoidTy()) {
+                            validFieldTypes.push_back(ft);
+                        }
+                    }
+
+                    if (validFieldTypes.empty()) {
+                        structType->setBody({});
+                    } else {
+                        structType->setBody(validFieldTypes);
+                    }
+                } else {
+                    // Set the body of the struct after all dependencies are resolved
+                    try {
+                        structType->setBody(fieldTypes);
+                    } catch (...) {
+                        fprintf(stderr, "Error: Exception during struct body creation for %s, using empty struct\n", mangledName.c_str());
+                        structType->setBody({});
+                    }
+                }
+            }
+        }
+    }
+
+    // Get Layout for accurate offsets and size
+    const llvm::StructLayout *Layout = codeGen.TheModule->getDataLayout().getStructLayout(structType);
+    if (!Layout) {
+        fprintf(stderr, "Error: Failed to get layout for struct\n");
+        InProgressInstantiations.erase(mangledName);
+        return nullptr;
+    }
+
+    // Update field offsets
+    for(size_t i = 0; i < fieldInfos.size(); ++i) {
+        fieldInfos[i].offset = Layout->getElementOffset(i);
+    }
+
+    // Register in type registry with correct size
+    TypeRegistry::getInstance().registerStruct(mangledName, fieldInfos, Layout->getSizeInBytes());
+
+    // GENERATE PROTOTYPES (Declarations only, no bodies)
+    // Generate prototypes for methods of the instantiated struct
+    // Add safety check for newAST validity
+    if (!newAST) {
+        fprintf(stderr, "Error: newAST is null in instantiateStructSkeleton for %s\n", mangledName.c_str());
+        InProgressInstantiations.erase(mangledName);
+        return nullptr;
+    }
+
+    // Iterate directly over the methods without copying
+    for (auto& method : newAST->getMethods()) {
+        if (!method) {
+            fprintf(stderr, "Error: null method in instantiateStructSkeleton for %s\n", mangledName.c_str());
+            continue;
+        }
+
+        auto proto = method->getPrototype();
+        if (!proto) {
+            fprintf(stderr, "Error: null prototype for method in instantiateStructSkeleton for %s\n", mangledName.c_str());
+            continue;
+        }
+
+        // Mangle method name: StructName_methodName
+        std::string originalName = proto->getName();
+
+        // Check if the method name looks like it includes type info (e.g., "int_get" instead of "get")
+        // Try to extract the actual method name by removing potential type prefixes
+        std::string correctedOriginalName = originalName;
+        if (originalName.length() > 4) { // At least "int_"
+            // Check if it starts with a common type name followed by "_"
+            if (originalName.substr(0, 4) == "int_") {
+                correctedOriginalName = originalName.substr(4); // Remove "int_"
+            } else if (originalName.substr(0, 5) == "bool_") {
+                correctedOriginalName = originalName.substr(5); // Remove "bool_"
+            } else if (originalName.substr(0, 6) == "float_") {
+                correctedOriginalName = originalName.substr(6); // Remove "float_"
+            } else if (originalName.substr(0, 5) == "char_") {
+                correctedOriginalName = originalName.substr(5); // Remove "char_"
+            } else if (originalName.substr(0, 5) == "byte_") {
+                correctedOriginalName = originalName.substr(5); // Remove "byte_"
+            }
+        }
+
+        std::string mangledMethodName = mangledName + "_" + correctedOriginalName;
+
+        // Create a new prototype with the mangled name
+        auto clonedProto = proto->clone();
+        if (!clonedProto) {
+            fprintf(stderr, "Error: failed to clone prototype for method %s in instantiateStructSkeleton for %s\n", originalName.c_str(), mangledName.c_str());
+            continue;
+        }
+
+        clonedProto->setName(mangledMethodName);
+
+        // Inject 'this' parameter as first argument with the instantiated struct type
+        clonedProto->injectThisParameter(mangledName);
+
+        // Generate the function declaration (prototype only)
+        llvm::Function *TheFunction = codeGen.funcCodeGen->codegen(*clonedProto);
+        if (!TheFunction) {
+            fprintf(stderr, "Error: failed to generate function for method %s in instantiateStructSkeleton for %s\n", originalName.c_str(), mangledName.c_str());
+            continue;
+        }
+
+        // Register the prototype in the global registry
+        std::string MangledName = clonedProto->getName();
+        RegisterFunctionProto(std::move(clonedProto)); // Register in Global Map
+
+        // Also inject 'this' parameter into the original method prototype in the AST
+        // This is needed for deferred processing
+        if (method && method->getPrototype()) {
+            method->getPrototype()->injectThisParameter(mangledName);
+        }
+
+        // Additionally, make sure the method name in the AST is corrected for consistency
+        if (method && method->getPrototype()) {
+            std::string astMethodName = method->getPrototype()->getName();
+            std::string correctedAstName = astMethodName;
+            if (astMethodName.length() > 4) {
+                if (astMethodName.substr(0, 4) == "int_") {
+                    correctedAstName = astMethodName.substr(4);
+                } else if (astMethodName.substr(0, 5) == "bool_") {
+                    correctedAstName = astMethodName.substr(5);
+                } else if (astMethodName.substr(0, 6) == "float_") {
+                    correctedAstName = astMethodName.substr(6);
+                } else if (astMethodName.substr(0, 5) == "char_") {
+                    correctedAstName = astMethodName.substr(5);
+                } else if (astMethodName.substr(0, 5) == "byte_") {
+                    correctedAstName = astMethodName.substr(5);
+                }
+            }
+            if (correctedAstName != astMethodName) {
+                method->getPrototype()->setName(correctedAstName);
+            }
+        }
+    }
+
+    // Fix method names in the AST to ensure they match the corrected names
+    // This is important for deferred processing later
+    for (auto& method : newAST->getMethods()) {
+        if (method && method->getPrototype()) {
+            std::string originalName = method->getPrototype()->getName();
+            std::string correctedName = originalName;
+
+            // Apply the same correction logic used above
+            if (originalName.length() > 4) { // At least "int_"
+                if (originalName.substr(0, 4) == "int_") {
+                    correctedName = originalName.substr(4); // Remove "int_"
+                } else if (originalName.substr(0, 5) == "bool_") {
+                    correctedName = originalName.substr(5); // Remove "bool_"
+                } else if (originalName.substr(0, 6) == "float_") {
+                    correctedName = originalName.substr(6); // Remove "float_"
+                } else if (originalName.substr(0, 5) == "char_") {
+                    correctedName = originalName.substr(5); // Remove "char_"
+                } else if (originalName.substr(0, 5) == "byte_") {
+                    correctedName = originalName.substr(5); // Remove "byte_"
+                }
+            }
+
+            // Only update if the name was actually corrected
+            if (correctedName != originalName) {
+                method->getPrototype()->setName(correctedName);
+            }
+        }
+    }
+
+    // Generate prototypes for constructors of the instantiated struct
+    // Iterate directly over the constructors without copying
+    for (auto& constructor : newAST->getConstructors()) {
+        if (!constructor) {
+            fprintf(stderr, "Error: null constructor in instantiateStructSkeleton for %s\n", mangledName.c_str());
+            continue;
+        }
+
+        // Create constructor function name: StructName_new[_ArgType...]
+        std::string funcName = mangledName + "_new";
+
+        // Mangle name if parameters exist (simple mangling)
+        std::vector<OType> paramOTypes;
+        for (const auto& param : constructor->getParams()) {
+            paramOTypes.push_back(param.second);
+        }
+
+        if (!paramOTypes.empty()) {
+            funcName = mangleGenericName(funcName, paramOTypes);
+        }
+
+        // Params: this, args...
+        std::vector<llvm::Type*> paramTypes;
+        std::vector<std::string> paramNames;
+
+        // 1. Add 'this' parameter
+        if (codeGen.StructTypes.find(mangledName) == codeGen.StructTypes.end()) {
+            codeGen.logError("Unknown struct type for constructor");
+            continue;
+        }
+        llvm::Type* structType = codeGen.StructTypes[mangledName];
+        if (!structType) {
+            fprintf(stderr, "Error: struct type is null for constructor in instantiateStructSkeleton for %s\n", mangledName.c_str());
+            continue;
+        }
+        paramTypes.push_back(llvm::PointerType::get(structType, 0));
+        paramNames.push_back("this");
+
+        // 2. Add user parameters
+        for (const auto& param : constructor->getParams()) {
+            llvm::Type* paramType = getLLVMType(param.second);
+            if (!paramType) {
+                fprintf(stderr, "Error: failed to get LLVM type for parameter in constructor for %s\n", mangledName.c_str());
+                continue;
+            }
+            paramTypes.push_back(paramType);
+            paramNames.push_back(param.first);
+        }
+
+        // Constructor returns void (it initializes the memory passed in 'this')
+        llvm::FunctionType* funcType = llvm::FunctionType::get(llvm::Type::getVoidTy(*codeGen.TheContext), paramTypes, false);
+
+        // Check if function already exists
+        llvm::Function* func = codeGen.TheModule->getFunction(funcName);
+        if (!func) {
+            func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, funcName, codeGen.TheModule);
+        }
+
+        // Register the constructor prototype
+        std::vector<std::pair<std::string, OType>> args;
+
+        // 1. Add 'this' (always first)
+        args.push_back({"this", OType(BaseType::Struct, 1, mangledName)});
+
+        // 2. Add user parameters
+        for (size_t i = 0; i < paramOTypes.size(); ++i) {
+            // paramNames[0] is 'this', so user params start at 1
+            if (i + 1 < paramNames.size()) {
+                args.push_back({paramNames[i+1], paramOTypes[i]});
+            }
+        }
+
+        // Create a temporary prototype just for registration purposes
+        auto tempProto = std::make_unique<PrototypeAST>(funcName, args, OType(BaseType::Void));
+        if (tempProto) {
+            RegisterFunctionProto(std::move(tempProto)); // Register in Global Map
+        }
+    }
+
+    // QUEUE FOR LATER (Add to the instantiation queue for deferred body generation)
+    codeGen.utilCodeGen->getInstantiationQueue().push_back({std::move(newAST), mangledName});
+
+    // Remove from in-progress set
+    InProgressInstantiations.erase(mangledName);
+
+    return structType;
+}
+
+void UtilityCodeGen::generateInstantiatedBodies() {
+    // Set the phase to GeneratingBodies to allow method body generation
+    CompilerPhase oldPhase = codeGen.CurrentPhase;
+    codeGen.CurrentPhase = CompilerPhase::GeneratingBodies;
+
+    // Process all queued instantiations to generate method bodies
+    for (auto& item : codeGen.InstantiationQueue) {
+        // Generate bodies for methods
+        for (auto& method : item.AST->getMethods()) {
+            if (method && method->getBody()) {
+                // Find the corresponding function in the module
+                std::string originalName = method->getPrototype()->getName();
+
+                // Apply the same name correction logic as in instantiateStructSkeleton
+                std::string correctedName = originalName;
+                if (originalName.length() > 4) {
+                    if (originalName.substr(0, 4) == "int_") {
+                        correctedName = originalName.substr(4);
+                    } else if (originalName.substr(0, 5) == "bool_") {
+                        correctedName = originalName.substr(5);
+                    } else if (originalName.substr(0, 6) == "float_") {
+                        correctedName = originalName.substr(6);
+                    } else if (originalName.substr(0, 5) == "char_") {
+                        correctedName = originalName.substr(5);
+                    } else if (originalName.substr(0, 5) == "byte_") {
+                        correctedName = originalName.substr(5);
+                    }
+                }
+
+                std::string mangledMethodName = item.MangledName + "_" + correctedName;
+
+                // Generate the function body
+                llvm::Function *TheFunction = codeGen.TheModule->getFunction(mangledMethodName);
+                if (TheFunction) {
+                    // Create a temporary function AST for code generation
+                    auto tempProto = method->getPrototype()->clone();
+                    tempProto->setName(mangledMethodName);
+
+                    auto tempFunc = std::make_unique<FunctionAST>(std::move(tempProto), method->getBody() ? method->getBody()->clone() : nullptr);
+                    codeGen.funcCodeGen->codegen(*tempFunc);
+                }
+            }
+        }
+
+        // Generate bodies for constructors
+        for (auto& constructor : item.AST->getConstructors()) {
+            if (constructor && constructor->getBody()) {
+                // Create constructor function name: StructName_new[_ArgType...]
+                std::string funcName = item.MangledName + "_new";
+
+                // Mangle name if parameters exist (simple mangling)
+                std::vector<OType> paramOTypes;
+                for (const auto& param : constructor->getParams()) {
+                    paramOTypes.push_back(param.second);
+                }
+
+                if (!paramOTypes.empty()) {
+                    funcName = mangleGenericName(funcName, paramOTypes);
+                }
+
+                // Generate the constructor body
+                llvm::Function *TheFunction = codeGen.TheModule->getFunction(funcName);
+                if (TheFunction) {
+                    // Create a temporary constructor AST for code generation
+                    // Clone the body to avoid ownership issues
+                    auto tempFunc = std::make_unique<FunctionAST>(
+                        std::make_unique<PrototypeAST>(funcName,
+                            std::vector<std::pair<std::string, OType>>{},
+                            OType(BaseType::Void)),
+                        constructor->getBody() ? constructor->getBody()->clone() : nullptr);
+                    codeGen.funcCodeGen->codegen(*tempFunc);
+                }
+            }
+        }
+    }
+
+    // Reset the phase back to the previous phase
+    codeGen.CurrentPhase = oldPhase;
 }
 
 llvm::Function *UtilityCodeGen::getFunctionFromPrototype(std::string Name) {
