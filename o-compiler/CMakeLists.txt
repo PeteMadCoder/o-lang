@@ -18,6 +18,7 @@ set(SOURCES
     src/CodeGen.cpp
     src/Parser.cpp
     src/CompilerDriver.cpp
+    src/SymbolTable.cpp
     src/codegen/CodeGenerator.cpp
     src/codegen/ExpressionCodeGen.cpp
     src/codegen/FunctionCodeGen.cpp

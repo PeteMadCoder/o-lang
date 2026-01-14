@@ -13,11 +13,12 @@ class Parser {
     Token curTok;
     int unsafeDepth = 0; // Track unsafe block nesting depth
     bool inImportContext = false; // Track if we're currently in an import context
+    bool forSymbolCollection = false; // Track if we're in symbol collection phase
     std::string currentFileDir; // Track current file's directory for relative imports
 
 public:
     Parser(Lexer& lex, CompilerDriver& drv);
-    Parser(Lexer& lex, CompilerDriver& drv, const std::string& currentFile);
+    Parser(Lexer& lex, CompilerDriver& drv, const std::string& currentFile, bool forSymbolCollection = false);
 
     // Advance to the next token
     void getNextToken();

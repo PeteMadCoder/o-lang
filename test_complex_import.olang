@@ -1,0 +1,8 @@
+import "string_like.olang";
+
+fn main() -> int {
+    var s1 = new String("hello");
+    var s2 = new String("world");
+    // var s3 = s1.op_add(s2);  // This might cause issues if not handled properly
+    return 0;
+}

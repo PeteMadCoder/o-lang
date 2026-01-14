@@ -150,7 +150,52 @@ llvm::Value *DerefExprAST::codegenAddress() {
 
 llvm::Value *UnresolvedNewExprAST::codegen() {
     if (!GlobalCodeGen) return nullptr;
-    return GlobalCodeGen->exprCodeGen->codegen(*this);
+
+    // During import phase, unresolved expressions should not generate code
+    if (!isResolved) {
+        fprintf(stderr, "Error: Attempting to generate code for unresolved 'new' expression: %s\n", ClassName.c_str());
+        return nullptr;
+    }
+
+    // If resolved, we need to generate code using the resolved constructor
+    // For now, we'll call the constructor function directly
+    // First, get the struct type
+    llvm::Type* structType = GlobalCodeGen->utilCodeGen->getLLVMType(OType(BaseType::Struct, 0, ClassName, {}, GenericArgs));
+    if (!structType) {
+        fprintf(stderr, "Error: Unknown struct type: %s\n", ClassName.c_str());
+        return nullptr;
+    }
+
+    // Allocate memory for the struct
+    llvm::Value* allocPtr = GlobalCodeGen->Builder->CreateAlloca(structType, nullptr, "structtmp");
+
+    // Prepare arguments for constructor call (first argument is 'this')
+    std::vector<llvm::Value*> ArgsV;
+    ArgsV.push_back(allocPtr);  // 'this' pointer
+
+    // Add the original constructor arguments
+    for (unsigned i = 0, e = Args.size(); i != e; ++i) {
+        llvm::Value *Arg = Args[i]->codegen();
+        if (!Arg) return nullptr;
+        ArgsV.push_back(Arg);
+    }
+
+    // Get the constructor function
+    llvm::Function *CalleeF = GlobalCodeGen->TheModule->getFunction(resolvedConstructorName);
+    if (!CalleeF) {
+        fprintf(stderr, "Unknown constructor: %s\n", resolvedConstructorName.c_str());
+        return nullptr;
+    }
+
+    // Verify that the argument count matches
+    if (CalleeF->arg_size() != ArgsV.size()) {
+        fprintf(stderr, "Incorrect # arguments passed: expected %lu, got %u\n",
+                (unsigned long)CalleeF->arg_size(), (unsigned)ArgsV.size());
+        return nullptr;
+    }
+
+    // Call the constructor
+    return GlobalCodeGen->Builder->CreateCall(CalleeF, ArgsV, "newtmp");
 }
 
 llvm::Value *NewExprAST::codegen() {

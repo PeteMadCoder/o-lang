@@ -5,7 +5,7 @@ struct Result<T> {
     var err_msg: String;
 
     // Factory: Success
-    fn ok(T: val) -> Result<T> {
+    fn ok(val: T) -> Result<T> {
         var r = new Result<T>();
         r.is_error = false;
         r.value = val;

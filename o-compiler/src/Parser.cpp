@@ -2,6 +2,7 @@
 #include "CompilerDriver.h"
 #include "AST.h"  // Include AST.h to access the global registry functions
 #include "codegen/CodeGenerator.h"  // Include to access GlobalCodeGen
+#include "SymbolTable.h"
 #include <iostream>
 #include <cassert>
 
@@ -27,7 +28,7 @@ Parser::Parser(Lexer& lex, CompilerDriver& drv) : lexer(lex), driver(drv), inImp
     assert(!isInUnsafeContext());
 }
 
-Parser::Parser(Lexer& lex, CompilerDriver& drv, const std::string& currentFile) : lexer(lex), driver(drv), inImportContext(false) {
+Parser::Parser(Lexer& lex, CompilerDriver& drv, const std::string& currentFile, bool forSymbolCollection) : lexer(lex), driver(drv), inImportContext(false), forSymbolCollection(forSymbolCollection) {
     // Extract directory from current file path
     size_t lastSlash = currentFile.find_last_of("/\\");
     if (lastSlash != std::string::npos) {
@@ -1038,8 +1039,18 @@ std::unique_ptr<StructDeclAST> Parser::ParseStruct() {
         return nullptr;
     }
     getNextToken(); // eat '}'
-    
-    return std::make_unique<StructDeclAST>(StructName, std::move(GenericParams), std::move(Fields), std::move(Methods), std::move(Constructors));
+
+    auto structAST = std::make_unique<StructDeclAST>(StructName, std::move(GenericParams), std::move(Fields), std::move(Methods), std::move(Constructors));
+
+    // If we're in symbol collection phase, register the struct in the symbol table
+    if (forSymbolCollection) {
+        SymbolTable* symTable = driver.getSymbolTable();
+        if (symTable) {
+            symTable->registerStructFromAST(*structAST);
+        }
+    }
+
+    return structAST;
 }
 
 std::unique_ptr<ClassDeclAST> Parser::ParseClass() {
@@ -1168,8 +1179,19 @@ std::unique_ptr<ClassDeclAST> Parser::ParseClass() {
         return nullptr;
     }
     getNextToken(); // eat '}'
-    
-    return std::make_unique<ClassDeclAST>(ClassName, ParentName, isOpen, std::move(Fields), std::move(Methods), std::move(Constructors), std::move(VirtualMethods));
+
+    auto classAST = std::make_unique<ClassDeclAST>(ClassName, ParentName, isOpen, std::move(Fields), std::move(Methods), std::move(Constructors), std::move(VirtualMethods));
+
+    // If we're in symbol collection phase, register the class in the symbol table
+    if (forSymbolCollection) {
+        SymbolTable* symTable = driver.getSymbolTable();
+        if (symTable) {
+            // Note: We'll need to implement a similar method for classes
+            // For now, we'll just focus on structs since the SymbolTable is mainly for structs
+        }
+    }
+
+    return classAST;
 }
 
 bool Parser::ParseTopLevel() {
@@ -1179,8 +1201,8 @@ bool Parser::ParseTopLevel() {
     } else if (curTok.type == TokenType::Struct) {
         auto structAST = ParseStruct();
         if (structAST) {
-            // Only generate code if we're not in import context
-            if (!inImportContext) {
+            // Only generate code if we're not in symbol collection phase
+            if (!forSymbolCollection) {
                 structAST->codegen();
             }
             return true;
@@ -1189,8 +1211,8 @@ bool Parser::ParseTopLevel() {
     } else if (curTok.type == TokenType::Class || curTok.type == TokenType::Open) {
         auto classAST = ParseClass();
         if (classAST) {
-            // Only generate code if we're not in import context
-            if (!inImportContext) {
+            // Only generate code if we're not in symbol collection phase
+            if (!forSymbolCollection) {
                 classAST->codegen();
             }
             return true;
@@ -1199,8 +1221,8 @@ bool Parser::ParseTopLevel() {
     } else if (curTok.type == TokenType::Fn) {
         auto funcAST = ParseDefinition();
         if (funcAST) {
-            // Only generate code if we're not in import context
-            if (!inImportContext) {
+            // Only generate code if we're not in symbol collection phase
+            if (!forSymbolCollection) {
                 auto *IR = funcAST->codegen();
                 return IR != nullptr;
             } else {
@@ -1357,7 +1379,8 @@ bool Parser::ParseImport() {
         GlobalCodeGen->inImportContext = true;
     }
 
-    driver.processFile(resolvedFilename);
+    // Use the driver's symbol collection phase method to process the imported file
+    driver.processFileForImport(resolvedFilename); // true for symbol collection only
 
     // Restore previous context
     inImportContext = previousImportContext;

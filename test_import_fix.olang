@@ -1,0 +1,19 @@
+// Test file to verify the import system fix
+struct Point {
+    x: int;
+    y: int;
+
+    fn new(x: int, y: int) -> Point {
+        var p = new Point(x, y);
+        return p;
+    }
+
+    fn getX() -> int {
+        return this.x;
+    }
+}
+
+fn main() -> int {
+    var p = new Point(10, 20);
+    return 0;
+}

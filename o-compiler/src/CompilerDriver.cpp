@@ -1,14 +1,40 @@
 #include "CompilerDriver.h"
 #include "Parser.h"
 #include "Lexer.h"
+#include "SymbolTable.h"
 #include <iostream>
 #include <fstream>
 #include <sstream>
 #include <filesystem>
 
+// Define destructor here to resolve the unique_ptr<SymbolTable>
+CompilerDriver::~CompilerDriver() = default;
+
 namespace fs = std::filesystem;
 
-void CompilerDriver::processFile(const std::string& filename) {
+CompilerDriver::CompilerDriver() {
+    symbolTable = std::make_unique<SymbolTable>();
+}
+
+void CompilerDriver::symbolCollectionPhase(const std::string& filename) {
+    // Process the main file to collect symbols
+    processFileInternal(filename, true); // true indicates this is for symbol collection only
+}
+
+void CompilerDriver::semanticResolutionPhase() {
+    // All symbols have been collected, now mark them as complete
+    if (symbolTable) {
+        symbolTable->finalizeAllSymbols();
+    }
+    // Additional semantic resolution can happen here
+}
+
+void CompilerDriver::codeGenerationPhase() {
+    // Code generation happens in the existing flow after semantic resolution
+    // This is handled by the existing codegen infrastructure
+}
+
+void CompilerDriver::processFileInternal(const std::string& filename, bool forSymbolCollection) {
     // 1. Resolve Filename
     std::string path = filename;
     bool found = false;
@@ -90,9 +116,9 @@ void CompilerDriver::processFile(const std::string& filename) {
     buffer << file.rdbuf();
     std::string source_code = buffer.str();
 
-    // 4. Parse
+    // 4. Parse - pass the forSymbolCollection flag to the parser
     Lexer lexer(source_code);
-    Parser parser(lexer, *this, path);
+    Parser parser(lexer, *this, path, forSymbolCollection);
 
     while (!parser.isEOF()) {
         if (!parser.ParseTopLevel()) {
@@ -103,6 +129,14 @@ void CompilerDriver::processFile(const std::string& filename) {
             return;
         }
     }
+}
+
+void CompilerDriver::processFile(const std::string& filename) {
+    processFileInternal(filename, false); // Default to false for backward compatibility
+}
+
+void CompilerDriver::processFileForImport(const std::string& filename) {
+    processFileInternal(filename, true); // true for symbol collection during import
 }
 
 bool CompilerDriver::hasProcessed(const std::string& filename) const {

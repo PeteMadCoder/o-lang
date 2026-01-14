@@ -1,0 +1,15 @@
+// Test complex import scenario with self-referential constructor
+struct String {
+    data: char*;
+    length: int;
+
+    new(data: char*) {
+        this.data = data;
+        this.length = 10; // Simplified
+    }
+
+    fn op_add(other: String) -> String {
+        // This creates a self-referential constructor call
+        return new String(this.data); // Simplified
+    }
+}

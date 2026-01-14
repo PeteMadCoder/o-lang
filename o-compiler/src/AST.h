@@ -527,6 +527,10 @@ class UnresolvedNewExprAST : public ExprAST {
     std::string ClassName;
     std::vector<OType> GenericArgs;
     std::vector<std::unique_ptr<ExprAST>> Args;
+    // Store constructor info once resolved
+    std::string resolvedConstructorName;
+    bool isResolved = false;
+
 public:
     UnresolvedNewExprAST(const std::string &ClassName, std::vector<std::unique_ptr<ExprAST>> Args, std::vector<OType> GenArgs = {})
         : ClassName(ClassName), Args(std::move(Args)), GenericArgs(GenArgs) {}
@@ -551,6 +555,15 @@ public:
     const std::string& getClassName() const { return ClassName; }
     std::vector<OType>& getGenericArgs() { return GenericArgs; }
     std::vector<std::unique_ptr<ExprAST>>& getArgs() { return Args; }
+
+    // Resolution methods
+    void markResolved(const std::string& constructorName) {
+        isResolved = true;
+        resolvedConstructorName = constructorName;
+    }
+
+    bool getIsResolved() const { return isResolved; }
+    const std::string& getResolvedConstructorName() const { return resolvedConstructorName; }
 };
 
 /// NewArrayExprAST - Expression for array allocation (new int[size])

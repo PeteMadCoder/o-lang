@@ -374,6 +374,37 @@ void SemanticWalker::walk(UnresolvedNewExprAST &E) {
             walk(*arg);
         }
     }
+
+    // Now resolve the constructor for this new expression
+    // Find the appropriate constructor based on argument types
+    std::string className = E.getClassName();
+    std::vector<OType> argTypes;
+
+    // Get types of arguments
+    for (auto& arg : E.getArgs()) {
+        if (arg) {
+            argTypes.push_back(arg->getOType());
+        }
+    }
+
+    // Create constructor name based on class name and argument types
+    std::string constructorName = className + "_new";
+
+    if (!argTypes.empty()) {
+        // Mangle the constructor name with argument types
+        constructorName = codeGen.utilCodeGen->mangleGenericName(constructorName, argTypes);
+    }
+
+    // Check if the constructor exists in the module
+    llvm::Function *constructorFunc = codeGen.TheModule->getFunction(constructorName);
+    if (constructorFunc) {
+        // Mark the expression as resolved with the constructor name
+        E.markResolved(constructorName);
+    } else {
+        // If constructor doesn't exist yet, it might be defined later or in another file
+        // We'll defer this resolution until all imports are complete
+        codeGen.logError(("Constructor not found: " + constructorName).c_str());
+    }
 }
 
 void SemanticWalker::enqueueMethodInstantiation(const std::string& baseName, const std::string& methodName, const std::vector<OType>& typeArgs) {

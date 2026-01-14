@@ -1,0 +1,9 @@
+// Main file that imports Point definition
+import "point_def.olang";
+
+fn main() -> int {
+    var p = new Point(10, 20);
+    var x = p.getX();
+    var y = p.getY();
+    return 0;
+}

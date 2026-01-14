@@ -148,11 +148,14 @@ void TypeResolver::resolveConstructors(StructDeclAST &S) {
         }
 
         PrototypeAST proto(funcName, args, OType(BaseType::Void));
-        
+
         // Register the prototype in the global registry
         if (codeGen.GlobalFunctionProtos.find(funcName) == codeGen.GlobalFunctionProtos.end()) {
             codeGen.GlobalFunctionProtos[funcName] = std::shared_ptr<PrototypeAST>(proto.clone());
         }
+
+        // Also register in the utility codegen for constructor lookup
+        codeGen.utilCodeGen->RegisterFunctionProto(std::make_unique<PrototypeAST>(proto));
     }
 }
 
@@ -191,11 +194,14 @@ void TypeResolver::resolveConstructors(ClassDeclAST &C) {
         }
 
         PrototypeAST proto(funcName, args, OType(BaseType::Void));
-        
+
         // Register the prototype in the global registry
         if (codeGen.GlobalFunctionProtos.find(funcName) == codeGen.GlobalFunctionProtos.end()) {
             codeGen.GlobalFunctionProtos[funcName] = std::shared_ptr<PrototypeAST>(proto.clone());
         }
+
+        // Also register in the utility codegen for constructor lookup
+        codeGen.utilCodeGen->RegisterFunctionProto(std::make_unique<PrototypeAST>(proto));
     }
 }
 

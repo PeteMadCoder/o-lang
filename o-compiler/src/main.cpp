@@ -65,20 +65,18 @@ int main(int argc, char** argv) {
 
     std::cout << "Compiling: " << InputFilename << "\n";
 
-    // 3. Process File - Phase 1: Symbol Collection (Import Phase)
-    // This phase only collects symbols, no expression resolution
-    driver.processFile(InputFilename);
+    // 3. NEW THREE-PHASE ARCHITECTURE
+    // Phase 1: Symbol Collection (Import Phase) - Collect all symbols, no expression resolution
+    driver.symbolCollectionPhase(InputFilename);
 
-    // 4. NEW THREE-PHASE ARCHITECTURE
-    // Phase 1: Semantic Discovery - Discover all required instantiations
-    // This phase walks all expressions and resolves constructors, method calls, etc.
-    semanticDiscoveryPhase();
-
-    // Phase 2: Validation - Validate the semantic graph
-    validationPhase();
+    // Phase 2: Semantic Resolution - Resolve constructors, method calls, etc.
+    driver.semanticResolutionPhase();
+    semanticDiscoveryPhase(); // This walks expressions to discover instantiations
+    validationPhase();       // Validate the semantic graph
 
     // Phase 3: Code Generation - Generate LLVM IR for all discovered elements
     codeGenerationPhase();
+    driver.codeGenerationPhase();
 
     // 5. Target Setup
     auto TargetTriple = llvm::sys::getDefaultTargetTriple();
