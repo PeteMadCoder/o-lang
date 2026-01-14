@@ -1,0 +1,45 @@
+import "std/memory.olang";
+import "std/io.olang";
+
+fn main() -> int {
+    // Test memory allocation
+    var ptr = alloc(16);
+    
+    // Test memory setting
+    set(ptr, 65, 16);  // Fill with 'A' character (ASCII 65)
+    
+    // Test memory copying
+    var dest = alloc(16);
+    copy(dest, ptr, 16);
+    
+    // Test memory comparison
+    var cmp_result = compare(ptr, dest, 16);
+    print_int(cmp_result);  // Should print 0 (equal)
+    unsafe { printf("\n"); }
+    
+    // Test memory zeroing
+    zero(ptr, 16);
+    var cmp_after_zero = compare(ptr, dest, 16);
+    print_int(cmp_after_zero);  // Should print non-zero (not equal)
+    unsafe { printf("\n"); }
+    
+    // Test safe operations
+    var safe_result = safe_copy(dest, 16, ptr, 8);
+    print_int(safe_result);  // Should print 1 (true)
+    unsafe { printf("\n"); }
+    
+    var bad_safe_result = safe_copy(dest, 16, ptr, 20);
+    print_int(bad_safe_result);  // Should print 0 (false)
+    unsafe { printf("\n"); }
+    
+    // Test alignment utility
+    var aligned = align_up(13, 8);
+    print_int(aligned);  // Should print 16 (next multiple of 8 after 13)
+    unsafe { printf("\n"); }
+    
+    // Clean up memory
+    dealloc(ptr);
+    dealloc(dest);
+    
+    return 0;
+}

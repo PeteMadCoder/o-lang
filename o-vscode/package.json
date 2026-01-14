@@ -1,0 +1,21 @@
+{
+  "name": "o-lang",
+  "displayName": "O Language",
+  "description": "Syntax highlighting for O",
+  "version": "0.0.1",
+  "engines": { "vscode": "^1.70.0" },
+  "categories": ["Programming Languages"],
+  "contributes": {
+    "languages": [{
+      "id": "o",
+      "aliases": ["O", "o-lang"],
+      "extensions": [".o", ".olang"],
+      "configuration": "./language-configuration.json"
+    }],
+    "grammars": [{
+      "language": "o",
+      "scopeName": "source.o",
+      "path": "./syntaxes/o.tmLanguage.json"
+    }]
+  }
+}
