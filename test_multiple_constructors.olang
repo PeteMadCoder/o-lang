@@ -1,0 +1,47 @@
+// Test with multiple constructors like the String class
+fn malloc(size: int) -> *byte;
+fn free(ptr: *byte);
+fn strlen(str: *byte) -> int;
+fn memcpy(dest: *byte, src: *byte, n: int) -> *void;
+
+struct TestString {
+    buffer: *byte;
+    length: int;
+    capacity: int;
+
+    // Constructor: Creates a String from a C-style string literal
+    new(ptr: *char) {
+        var len = 0;
+        unsafe {
+            len = strlen(ptr);
+        }
+
+        this.length = len;
+        this.capacity = len + 1;
+
+        unsafe {
+            this.buffer = malloc(this.capacity);
+            var end_ptr = &this.buffer[len];
+            *end_ptr = 0;
+        }
+    }
+
+    // Constructor: Creates an empty string with reserved capacity
+    new(cap: int) {
+        this.length = 0;
+        this.capacity = cap;
+        if (cap < 1) {
+            this.capacity = 1;
+        }
+
+        unsafe {
+            this.buffer = malloc(this.capacity);
+            *this.buffer = 0;
+        }
+    }
+}
+
+fn main() -> int {
+    var msg = new TestString("Hello");
+    return 0;
+}

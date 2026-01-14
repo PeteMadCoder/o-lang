@@ -567,7 +567,7 @@ echo ""
 echo -e "${YELLOW}Standard Library Tests:${NC}"
 run_should_pass_test "stdlib_import" "$TEMP_DIR/stdlib/import_test.olang" "Import statement"
 # This test is expected to fail due to the known String module issue
-run_test "stdlib_string" "$TEMP_DIR/stdlib/string_test.olang" "failure" "String library implementation (known to fail)"
+run_should_pass_test "stdlib_string" "$TEMP_DIR/stdlib/string_test.olang" "failure" "String library implementation (known to fail)"
 run_should_pass_test "stdlib_vector" "$TEMP_DIR/stdlib/vector_test.olang" "Vector library implementation"
 
 echo ""
@@ -579,7 +579,7 @@ echo ""
 echo -e "${YELLOW}Advanced Tests:${NC}"
 run_should_pass_test "adv_recursion" "$TEMP_DIR/advanced/recursion.olang" "Recursive function"
 # This test is expected to fail due to the known String module issue
-run_test "adv_string" "$TEMP_DIR/advanced/string_module.olang" "failure" "String module (known to fail)"
+run_should_pass_test "adv_string" "$TEMP_DIR/advanced/string_module.olang" "failure" "String module (known to fail)"
 
 # Create casting test
 cat > "$TEMP_DIR/advanced/casting_test.olang" << 'EOF'

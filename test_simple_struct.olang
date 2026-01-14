@@ -1,0 +1,13 @@
+// Simple struct without complex methods
+struct SimpleStruct {
+    value: int;
+    
+    new(val: int) {
+        this.value = val;
+    }
+}
+
+fn main() -> int {
+    var s = new SimpleStruct(42);
+    return 0;
+}

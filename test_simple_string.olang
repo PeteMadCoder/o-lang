@@ -1,0 +1,22 @@
+// Simple test to isolate the issue
+fn malloc(size: int) -> *byte;
+fn free(ptr: *byte);
+fn strlen(str: *byte) -> int;
+fn memcpy(dest: *byte, src: *byte, n: int) -> *void;
+
+struct SimpleString {
+    buffer: *byte;
+    length: int;
+    
+    new(len: int) {
+        this.length = len;
+        unsafe {
+            this.buffer = malloc(len + 1);
+        }
+    }
+}
+
+fn main() -> int {
+    var s = new SimpleString(10);
+    return 0;
+}

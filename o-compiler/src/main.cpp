@@ -112,21 +112,33 @@ int main(int argc, char** argv) {
     // 6. Emit Object File
     std::error_code EC;
     llvm::raw_fd_ostream dest(ObjFilename, EC, llvm::sys::fs::OF_None);
-    
+
     if (EC) {
         std::cerr << "Could not open output file: " << EC.message() << "\n";
         return 1;
     }
-    
+
+    fprintf(stderr, "DEBUG: About to create PassManager\n");
+    fflush(stderr);
     llvm::legacy::PassManager pass;
+    fprintf(stderr, "DEBUG: PassManager created\n");
+    fflush(stderr);
     auto FileType = llvm::CodeGenFileType::ObjectFile;
-    
+
+    fprintf(stderr, "DEBUG: About to add passes to emit file\n");
+    fflush(stderr);
     if (TheTargetMachine->addPassesToEmitFile(pass, dest, nullptr, FileType)) {
         std::cerr << "TargetMachine can't emit a file of this type\n";
         return 1;
     }
-    
+    fprintf(stderr, "DEBUG: Passes added successfully\n");
+    fflush(stderr);
+
+    fprintf(stderr, "DEBUG: About to run optimization passes on module\n");
+    fflush(stderr);
     pass.run(*TheModule);
+    fprintf(stderr, "DEBUG: Optimization passes completed\n");
+    fflush(stderr);
     dest.flush();
     dest.close(); // Close before linking
     
