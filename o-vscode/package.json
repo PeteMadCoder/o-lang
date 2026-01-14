@@ -11,17 +11,16 @@
       "id": "o",
       "aliases": ["O", "o-lang"],
       "extensions": [".o", ".olang"],
-      "configuration": "./language-configuration.json"
+      "configuration": "./language-configuration.json",
+      "icon": {
+        "light": "./icons/o-file.svg",
+        "dark": "./icons/o-file.svg"
+      }
     }],
     "grammars": [{
       "language": "o",
       "scopeName": "source.o",
       "path": "./syntaxes/o.tmLanguage.json"
-    }],
-    "iconThemes": [{
-      "id": "o-icon-theme",
-      "label": "O Icon Theme",
-      "path": "./icons/theme.json"
     }]
   }
 }
