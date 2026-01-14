@@ -625,7 +625,7 @@ llvm::Type* UtilityCodeGen::instantiateStruct(const std::string& genericName, co
     }
 
     // QUEUE FOR LATER (Add to the instantiation queue for deferred body generation)
-    codeGen.utilCodeGen->getInstantiationQueue().push_back({std::move(newAST), mangledName});
+    codeGen.utilCodeGen->getInstantiationQueue().push_back({std::move(newAST), mangledName, typeArgs});
 
     // Remove from in-progress set
     InProgressInstantiations.erase(mangledName);
@@ -634,12 +634,19 @@ llvm::Type* UtilityCodeGen::instantiateStruct(const std::string& genericName, co
 }
 
 llvm::Type* UtilityCodeGen::instantiateStructSkeleton(const std::string& genericName, const std::vector<OType>& typeArgs) {
+    fprintf(stderr, "DEBUG: instantiateStructSkeleton called with %s\n", genericName.c_str());
     // Enforce that instantiation only happens during the instantiation phase
     enforceInstantiationPhase("instantiateStructSkeleton: " + genericName);
+    
+    fprintf(stderr, "DEBUG: Passed enforceInstantiationPhase\n");
 
     if (codeGen.GenericStructRegistry.count(genericName) == 0) return nullptr;
+    
+    fprintf(stderr, "DEBUG: GenericStructRegistry has entry\n");
 
     std::string mangledName = mangleGenericName(genericName, typeArgs);
+    
+    fprintf(stderr, "DEBUG: Created mangledName: %s\n", mangledName.c_str());
 
     // Check if we're already in the process of instantiating this type
     if (InProgressInstantiations.count(mangledName)) {
@@ -658,7 +665,9 @@ llvm::Type* UtilityCodeGen::instantiateStructSkeleton(const std::string& generic
     // Mark this instantiation as in-progress
     InProgressInstantiations.insert(mangledName);
 
+    fprintf(stderr, "DEBUG: About to get genericAST for skeleton\n");
     const auto& genericAST = codeGen.GenericStructRegistry[genericName];
+    fprintf(stderr, "DEBUG: Got genericAST\n");
     if (genericAST->getGenericParams().size() != typeArgs.size()) {
         codeGen.logError(("Incorrect number of type arguments for " + genericName).c_str());
         InProgressInstantiations.erase(mangledName);
@@ -894,8 +903,10 @@ llvm::Type* UtilityCodeGen::instantiateStructSkeleton(const std::string& generic
         return nullptr;
     }
 
+    fprintf(stderr, "DEBUG: About to iterate over methods for %s\n", mangledName.c_str());
     // Iterate directly over the methods without copying
     for (auto& method : newAST->getMethods()) {
+        fprintf(stderr, "DEBUG: Processing method for %s\n", mangledName.c_str());
         if (!method) {
             fprintf(stderr, "Error: null method in instantiateStructSkeleton for %s\n", mangledName.c_str());
             continue;
@@ -1011,9 +1022,11 @@ llvm::Type* UtilityCodeGen::instantiateStructSkeleton(const std::string& generic
         }
     }
 
+    fprintf(stderr, "DEBUG: About to iterate over constructors for %s\n", mangledName.c_str());
     // Generate prototypes for constructors of the instantiated struct
     // Iterate directly over the constructors without copying
     for (auto& constructor : newAST->getConstructors()) {
+        fprintf(stderr, "DEBUG: Processing constructor for %s\n", mangledName.c_str());
         if (!constructor) {
             fprintf(stderr, "Error: null constructor in instantiateStructSkeleton for %s\n", mangledName.c_str());
             continue;
@@ -1091,7 +1104,7 @@ llvm::Type* UtilityCodeGen::instantiateStructSkeleton(const std::string& generic
     }
 
     // QUEUE FOR LATER (Add to the instantiation queue for deferred body generation)
-    codeGen.utilCodeGen->getInstantiationQueue().push_back({std::move(newAST), mangledName});
+    codeGen.utilCodeGen->getInstantiationQueue().push_back({std::move(newAST), mangledName, typeArgs});
 
     // Remove from in-progress set
     InProgressInstantiations.erase(mangledName);
@@ -1099,21 +1112,87 @@ llvm::Type* UtilityCodeGen::instantiateStructSkeleton(const std::string& generic
     return structType;
 }
 
-void UtilityCodeGen::generateInstantiatedBodies() {
+void UtilityCodeGen::generateInstantiatedBodies(const std::vector<PendingInstantiation>& items) {
+    fprintf(stderr, "DEBUG: generateInstantiatedBodies called with %zu items\n", items.size());
+    fflush(stderr);
     // Set the phase to GeneratingBodies to allow method body generation
     CompilerPhase oldPhase = codeGen.CurrentPhase;
     codeGen.CurrentPhase = CompilerPhase::GeneratingBodies;
+    
+    fprintf(stderr, "DEBUG: Phase set to GeneratingBodies\n");
+    fflush(stderr);
 
-    // Process all queued instantiations to generate method bodies
-    for (auto& item : codeGen.InstantiationQueue) {
+
+
+    // Process the provided batch of instantiations
+    // iterate over 'items' (local batch), NOT 'codeGen.InstantiationQueue'
+    for (const auto& item : items) {
+        fprintf(stderr, "DEBUG: Processing item in loop\n");
+        fflush(stderr);
+
+        
+        // Reconstruct the typeMap from item.TypeArgs and the generic struct definition
+        // First, extract the base name from the mangled name (everything before the first underscore followed by lowercase)
+        // For example: "Vector_int" -> "Vector"
+        fprintf(stderr, "DEBUG: About to access item.MangledName\n");
+        fflush(stderr);
+        std::string baseName = item.MangledName;
+        fprintf(stderr, "DEBUG: Got MangledName: %s\n", baseName.c_str());
+        fflush(stderr);
+        size_t pos = 0;
+        while (pos < baseName.length()) {
+            if (baseName[pos] == '_' && pos + 1 < baseName.length() && std::islower(baseName[pos + 1])) {
+                baseName = baseName.substr(0, pos);
+                break;
+            }
+            pos++;
+        }
+        fprintf(stderr, "DEBUG: Extracted baseName: %s\n", baseName.c_str());
+        fflush(stderr);
+        
+        // Build the type map
+        std::map<std::string, OType> typeMap;
+        if (codeGen.GenericStructRegistry.count(baseName)) {
+            fprintf(stderr, "DEBUG: Found in registry\n");
+            fflush(stderr);
+            const auto& genericAST = codeGen.GenericStructRegistry[baseName];
+            const auto& genericParams = genericAST->getGenericParams();
+            fprintf(stderr, "DEBUG: TypeArgs size: %zu\n", item.TypeArgs.size());
+            fflush(stderr);
+            for (size_t i = 0; i < genericParams.size() && i < item.TypeArgs.size(); ++i) {
+                typeMap[genericParams[i]] = item.TypeArgs[i];
+            }
+        }
+        fprintf(stderr, "DEBUG: TypeMap built\n");
+        fflush(stderr);
+        fprintf(stderr, "DEBUG: TypeMap has %zu entries:\n", typeMap.size());
+        fflush(stderr);
+        for (const auto& [key, val] : typeMap) {
+            fprintf(stderr, "DEBUG:   %s -> T=%d structName=%s\n", key.c_str(), (int)val.base, val.structName.c_str());
+            fflush(stderr);
+        }
+
+        
         // Generate bodies for methods
-        for (auto& method : item.AST->getMethods()) {
+        fprintf(stderr, "DEBUG: About to get methods\n");
+        fflush(stderr);
+        for (size_t methodIdx = 0; methodIdx < item.AST->getMethods().size(); ++methodIdx) {
+            auto& method = item.AST->getMethods()[methodIdx];
+            fprintf(stderr, "DEBUG: In methods loop, method index %zu of %zu\n", methodIdx, item.AST->getMethods().size());
+            fflush(stderr);
+            fprintf(stderr, "DEBUG: method ptr: %p\n", (void*)method.get());
+            fflush(stderr);
             if (method && method->getBody()) {
+                fprintf(stderr, "DEBUG: method passes nullptr check\n");
+                fflush(stderr);
                 // Find the corresponding function in the module
                 std::string originalName = method->getPrototype()->getName();
+                fprintf(stderr, "DEBUG: Got original name: %s\n", originalName.c_str());
+                fflush(stderr);
 
-                // Apply the same name correction logic as in instantiateStructSkeleton
                 std::string correctedName = originalName;
+                fprintf(stderr, "DEBUG: originalName length: %zu\n", originalName.length());
+                fflush(stderr);
                 if (originalName.length() > 4) {
                     if (originalName.substr(0, 4) == "int_") {
                         correctedName = originalName.substr(4);
@@ -1127,18 +1206,47 @@ void UtilityCodeGen::generateInstantiatedBodies() {
                         correctedName = originalName.substr(5);
                     }
                 }
+                fprintf(stderr, "DEBUG: correctedName: %s\n", correctedName.c_str());
+                fflush(stderr);
 
                 std::string mangledMethodName = item.MangledName + "_" + correctedName;
+                fprintf(stderr, "DEBUG: mangledMethodName: %s\n", mangledMethodName.c_str());
+                fflush(stderr);
 
                 // Generate the function body
                 llvm::Function *TheFunction = codeGen.TheModule->getFunction(mangledMethodName);
-                if (TheFunction) {
-                    // Create a temporary function AST for code generation
-                    auto tempProto = method->getPrototype()->clone();
-                    tempProto->setName(mangledMethodName);
+                fprintf(stderr, "DEBUG: TheFunction ptr: %p\n", (void*)TheFunction);
+                fflush(stderr);
 
-                    auto tempFunc = std::make_unique<FunctionAST>(std::move(tempProto), method->getBody() ? method->getBody()->clone() : nullptr);
-                    codeGen.funcCodeGen->codegen(*tempFunc);
+                if (TheFunction) {
+                    fprintf(stderr, "DEBUG: TheFunction exists, calling clone\n");
+                    fflush(stderr);
+                    auto clonedProto = method->getPrototype()->clone(typeMap);
+                    fprintf(stderr, "DEBUG: Proto cloned\n");
+                    fflush(stderr);
+
+                    clonedProto->setName(mangledMethodName);
+                    fprintf(stderr, "DEBUG: Proto name set\n");
+                    fflush(stderr);
+
+                    // Clone the body WITH typeMap so generic types are substituted
+                    fprintf(stderr, "DEBUG: Method body ptr before clone: %p\n", (void*)method->getBody());
+                    fflush(stderr);
+                    fprintf(stderr, "DEBUG: About to clone body for %s\n", correctedName.c_str());
+                    fflush(stderr);
+                    auto clonedBody = method->getBody() ? method->getBody()->clone(typeMap) : nullptr;
+                    fprintf(stderr, "DEBUG: Body cloned, ptr: %p (from unique_ptr.get()), method body type: %s\n", (void*)(clonedBody ? clonedBody.get() : nullptr), (clonedBody ? typeid(*clonedBody).name() : "nullptr"));
+                    fprintf(stderr, "DEBUG: clonedBody unique_ptr address: %p\n", (void*)&clonedBody);
+                    fflush(stderr);
+                    
+                    auto tempFunc = std::make_unique<FunctionAST>(std::move(clonedProto), std::move(clonedBody));
+                    fprintf(stderr, "DEBUG: FunctionAST created for %s, body in FunctionAST: %p\n", correctedName.c_str(), (void*)tempFunc->getBody());
+                    fflush(stderr);
+                    fprintf(stderr, "DEBUG: About to call codegen for %s\n", correctedName.c_str());
+                    fflush(stderr);
+                    llvm::Function *result = codeGen.funcCodeGen->codegen(*tempFunc);
+                    fprintf(stderr, "DEBUG: codegen completed for %s, result=%p\n", correctedName.c_str(), (void*)result);
+                    fflush(stderr);
                 }
             }
         }
@@ -1162,13 +1270,11 @@ void UtilityCodeGen::generateInstantiatedBodies() {
                 // Generate the constructor body
                 llvm::Function *TheFunction = codeGen.TheModule->getFunction(funcName);
                 if (TheFunction) {
-                    // Create a temporary constructor AST for code generation
-                    // Clone the body to avoid ownership issues
                     auto tempFunc = std::make_unique<FunctionAST>(
                         std::make_unique<PrototypeAST>(funcName,
                             std::vector<std::pair<std::string, OType>>{},
                             OType(BaseType::Void)),
-                        constructor->getBody() ? constructor->getBody()->clone() : nullptr);
+                        constructor->getBody() ? constructor->getBody()->clone(typeMap) : nullptr);
                     codeGen.funcCodeGen->codegen(*tempFunc);
                 }
             }

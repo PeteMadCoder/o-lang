@@ -35,6 +35,7 @@ class InstantiationManager;
 struct PendingInstantiation {
     std::unique_ptr<StructDeclAST> AST;
     std::string MangledName;
+    std::vector<OType> TypeArgs;  // Store the type arguments for later substitution
 };
 
 // Scope Management

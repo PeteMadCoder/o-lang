@@ -15,7 +15,7 @@ public:
     std::string mangleGenericName(const std::string& baseName, const std::vector<OType>& args);
     llvm::Type* instantiateStruct(const std::string& genericName, const std::vector<OType>& typeArgs);
     llvm::Type* instantiateStructSkeleton(const std::string& genericName, const std::vector<OType>& typeArgs);
-    void generateInstantiatedBodies();
+    void generateInstantiatedBodies(const std::vector<PendingInstantiation>& items);
     llvm::Function *getFunctionFromPrototype(std::string Name);
     void RegisterFunctionProto(std::unique_ptr<PrototypeAST> Proto);
     llvm::StructType* getSliceType(llvm::Type* ElementType);

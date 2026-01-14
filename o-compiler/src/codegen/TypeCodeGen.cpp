@@ -272,12 +272,12 @@ void TypeCodeGen::processDeferredInstantiations() {
 
     // Process all pending instantiations
     while (!codeGen.utilCodeGen->getInstantiationQueue().empty()) {
-        // Move all pending items to a local batch
-        std::vector<PendingInstantiation> CurrentBatch;
-        CurrentBatch.swap(codeGen.utilCodeGen->getInstantiationQueue());
+        // Move all pending items to a local batch - this is the fix for iterator invalidation
+        std::vector<PendingInstantiation> CurrentBatch = std::move(codeGen.utilCodeGen->getInstantiationQueue());
+        codeGen.utilCodeGen->getInstantiationQueue().clear();
 
         // Process this batch
-        for (auto& Item : CurrentBatch) {
+        for (const auto& Item : CurrentBatch) {
             std::cerr << "Processing Deferred Item: " << Item.MangledName << "\n";
 
             // Clear insertion point to avoid conflicts

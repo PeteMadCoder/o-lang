@@ -1,0 +1,7 @@
+import "std/vector.olang";
+
+fn main() -> int {
+    var vec = new Vector<int>();
+    vec.push(10);
+    return 0;  // Don't call pop
+}

@@ -797,16 +797,25 @@ public:
     llvm::Value *codegen() override;
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
                                    CloneMemo& memo) const override {
-        if (auto it = memo.find(this); it != memo.end())
+        fprintf(stderr, "DEBUG BlockExprAST::clone: this=%p, memo.size()=%zu\n", (void*)this, memo.size());
+        fflush(stderr);
+        if (auto it = memo.find(this); it != memo.end()) {
+            fprintf(stderr, "DEBUG BlockExprAST::clone: found in memo, returning cached\n");
+            fflush(stderr);
             return std::unique_ptr<ExprAST>(it->second);
+        }
 
         auto* raw = new BlockExprAST({});
+        fprintf(stderr, "DEBUG BlockExprAST::clone: created new BlockExprAST=%p\n", (void*)raw);
+        fflush(stderr);
         memo[this] = raw;
 
         std::vector<std::unique_ptr<ExprAST>> NewExprs;
         for(const auto& e : Expressions) NewExprs.push_back(e->clone(typeMap, memo));
         raw->Expressions = std::move(NewExprs);
 
+        fprintf(stderr, "DEBUG BlockExprAST::clone: returning %p\n", (void*)raw);
+        fflush(stderr);
         return std::unique_ptr<ExprAST>(raw);
     }
 
@@ -1080,7 +1089,13 @@ inline std::unique_ptr<StructDeclAST> StructDeclAST::clone(const std::map<std::s
     std::vector<std::pair<std::string, OType>> NewFields;
     for(const auto& f : Fields) NewFields.push_back(std::make_pair(f.first, f.second.substitute(typeMap)));
 
-    return std::make_unique<StructDeclAST>(Name, GenericParams, NewFields, std::move(NewMethods), std::move(NewConstructors));
+    // Important: Only clear GenericParams if we're actually substituting types
+    // If typeMap is empty, this is just a copy and should preserve generics
+    std::vector<std::string> resultParams = GenericParams;
+    if (!typeMap.empty()) {
+        resultParams.clear(); // Clear params to indicate this is now concrete
+    }
+    return std::make_unique<StructDeclAST>(Name, resultParams, NewFields, std::move(NewMethods), std::move(NewConstructors));
 }
 
 inline std::unique_ptr<ClassDeclAST> ClassDeclAST::clone(const std::map<std::string, OType>& typeMap) const {
