@@ -1,0 +1,12 @@
+import "std/string.olang";
+import "std/io.olang";
+
+fn main() -> int {
+    // Test creating a string from a literal
+    var str1 = new String("Hello");
+
+    // Print the result
+    println(str1.c_str());
+
+    return 0;
+}

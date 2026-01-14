@@ -1,0 +1,41 @@
+import "std/vector.olang";
+import "std/io.olang";
+
+fn main() -> int {
+    // Test creating a vector of integers
+    var vec = new Vector<int>();
+    
+    // Test pushing elements
+    vec.push(10);
+    vec.push(20);
+    vec.push(30);
+    
+    // Test size
+    var size = vec.size();
+    print_int(size);
+    println("");
+    
+    // Test indexing
+    var first = vec[0];
+    print_int(first);
+    println("");
+    
+    var second = vec[1];
+    print_int(second);
+    println("");
+    
+    var third = vec[2];
+    print_int(third);
+    println("");
+    
+    // Test popping
+    var popped = vec.pop();
+    print_int(popped);
+    println("");
+    
+    var newSize = vec.size();
+    print_int(newSize);
+    println("");
+    
+    return 0;
+}

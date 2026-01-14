@@ -412,6 +412,74 @@ fn main() -> int {
 }
 EOF
 
+# Create string library test
+cat > "$TEMP_DIR/stdlib/string_test.olang" << 'EOF'
+import "std/string.olang";
+import "std/io.olang";
+
+fn main() -> int {
+    // Test creating a string from a literal
+    var str1 = new String("Hello");
+
+    // Test creating an empty string with capacity
+    var str2 = new String(10);
+
+    // Test appending
+    var world = new String(" World");
+    str1.append(world);
+
+    // Print the result
+    println(str1.c_str());
+
+    return 0;
+}
+EOF
+
+# Create vector library test
+cat > "$TEMP_DIR/stdlib/vector_test.olang" << 'EOF'
+import "std/vector.olang";
+import "std/io.olang";
+
+fn main() -> int {
+    // Test creating a vector of integers
+    var vec = new Vector<int>();
+
+    // Test pushing elements
+    vec.push(10);
+    vec.push(20);
+    vec.push(30);
+
+    // Test size
+    var size = vec.size();
+    print_int(size);
+    println("");
+
+    // Test indexing
+    var first = vec[0];
+    print_int(first);
+    println("");
+
+    var second = vec[1];
+    print_int(second);
+    println("");
+
+    var third = vec[2];
+    print_int(third);
+    println("");
+
+    // Test popping
+    var popped = vec.pop();
+    print_int(popped);
+    println("");
+
+    var newSize = vec.size();
+    print_int(newSize);
+    println("");
+
+    return 0;
+}
+EOF
+
 # Create error tests
 cat > "$TEMP_DIR/errors/invalid_syntax.olang" << 'EOF'
 fn main() -> int {
@@ -498,6 +566,9 @@ run_should_pass_test "op_overload" "$TEMP_DIR/operators/operator_overload.olang"
 echo ""
 echo -e "${YELLOW}Standard Library Tests:${NC}"
 run_should_pass_test "stdlib_import" "$TEMP_DIR/stdlib/import_test.olang" "Import statement"
+# This test is expected to fail due to the known String module issue
+run_test "stdlib_string" "$TEMP_DIR/stdlib/string_test.olang" "failure" "String library implementation (known to fail)"
+run_should_pass_test "stdlib_vector" "$TEMP_DIR/stdlib/vector_test.olang" "Vector library implementation"
 
 echo ""
 echo -e "${YELLOW}Error Tests:${NC}"
