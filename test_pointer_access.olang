@@ -1,0 +1,27 @@
+// Test to isolate the string issue
+struct SimpleStruct {
+    data: *byte;
+    size: int;
+
+    new(sz: int) {
+        this.size = sz;
+        unsafe {
+            this.data = malloc(sz);
+        }
+    }
+
+    fn test_access() {
+        unsafe {
+            var ptr = &this.data[5];  // This might be causing the issue
+            *ptr = 10;
+        }
+    }
+}
+
+fn main() -> int {
+    var s = new SimpleStruct(10);
+    s.test_access();
+    return 0;
+}
+
+fn malloc(size: int) -> *byte;
