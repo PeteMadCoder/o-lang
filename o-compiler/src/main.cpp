@@ -75,6 +75,10 @@ int main(int argc, char** argv) {
     validationPhase();       // Validate the semantic graph
 
     // Phase 3: Code Generation - Generate LLVM IR for all discovered elements
+    // We need to process the main file again for code generation (not just symbol collection)
+    // Clear the processed files to allow re-processing for code generation
+    driver.clearProcessedFiles();
+    driver.processFile(InputFilename);  // This will process with forSymbolCollection=false
     codeGenerationPhase();
     driver.codeGenerationPhase();
 

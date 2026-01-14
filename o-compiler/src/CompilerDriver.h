@@ -31,6 +31,9 @@ public:
     // Public method for internal file processing during imports
     void processFileForImport(const std::string& filename);
 
+    // Public method to clear processed files to allow re-processing
+    void clearProcessedFiles() { processedFiles.clear(); }
+
 private:
     void processFileInternal(const std::string& filename, bool forSymbolCollection);
 };
