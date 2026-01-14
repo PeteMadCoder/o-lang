@@ -250,19 +250,20 @@ llvm::Function *PrototypeAST::codegen() {
 
 llvm::Function *FunctionAST::codegen() {
     if (!GlobalCodeGen) return nullptr;
-    // Only generate function code if not in import context
-    if (!GlobalCodeGen->inImportContext) {
+    // Only skip function code generation during import in symbol collection phase
+    // During code generation phase, we need to generate imported function bodies
+    if (!GlobalCodeGen->inImportContext || !GlobalCodeGen->inSymbolCollectionMode) {
         return GlobalCodeGen->funcCodeGen->codegen(*this);
     }
-    return nullptr; // Just return null during import
+    return nullptr; // Just return null during import in symbol collection phase
 }
 
 void StructDeclAST::codegen() {
     if (!GlobalCodeGen) return;
     // First, resolve semantics (no LLVM IR generation) - always do this
     GlobalCodeGen->typeResolver->resolve(*this);
-    // Then, generate LLVM IR - only if not in import context
-    if (!GlobalCodeGen->inImportContext) {
+    // Then, generate LLVM IR - only if not in import context during symbol collection phase
+    if (!GlobalCodeGen->inImportContext || !GlobalCodeGen->inSymbolCollectionMode) {
         GlobalCodeGen->typeCodeGen->codegen(*this);
     }
 }
@@ -271,8 +272,8 @@ void ClassDeclAST::codegen() {
     if (!GlobalCodeGen) return;
     // First, resolve semantics (no LLVM IR generation) - always do this
     GlobalCodeGen->typeResolver->resolve(*this);
-    // Then, generate LLVM IR - only if not in import context
-    if (!GlobalCodeGen->inImportContext) {
+    // Then, generate LLVM IR - only if not in import context during symbol collection phase
+    if (!GlobalCodeGen->inImportContext || !GlobalCodeGen->inSymbolCollectionMode) {
         GlobalCodeGen->typeCodeGen->codegen(*this);
     }
 }

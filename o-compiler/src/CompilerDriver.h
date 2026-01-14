@@ -11,7 +11,8 @@ class SymbolTable;
 class CompilerDriver {
 private:
     std::vector<std::string> includePaths;
-    std::unordered_set<std::string> processedFiles;
+    std::unordered_set<std::string> symbolCollectionProcessedFiles;
+    std::unordered_set<std::string> codeGenerationProcessedFiles;
     std::unique_ptr<SymbolTable> symbolTable;
 
 public:
@@ -32,7 +33,7 @@ public:
     void processFileForImport(const std::string& filename);
 
     // Public method to clear processed files to allow re-processing
-    void clearProcessedFiles() { processedFiles.clear(); }
+    void clearProcessedFiles() { symbolCollectionProcessedFiles.clear(); codeGenerationProcessedFiles.clear(); }
 
 private:
     void processFileInternal(const std::string& filename, bool forSymbolCollection);

@@ -42,6 +42,11 @@ Parser::Parser(Lexer& lex, CompilerDriver& drv, const std::string& currentFile, 
     // Verify initial safety state
     assert(unsafeDepth == 0);
     assert(!isInUnsafeContext());
+
+    // Update the GlobalCodeGen's symbol collection mode
+    if (GlobalCodeGen) {
+        GlobalCodeGen->inSymbolCollectionMode = forSymbolCollection;
+    }
 }
 
 void Parser::getNextToken() {
@@ -1379,8 +1384,13 @@ bool Parser::ParseImport() {
         GlobalCodeGen->inImportContext = true;
     }
 
-    // Use the driver's symbol collection phase method to process the imported file
-    driver.processFileForImport(resolvedFilename); // true for symbol collection only
+    // Use the appropriate driver method based on current compilation phase
+    if (forSymbolCollection) {
+        driver.processFileForImport(resolvedFilename); // true for symbol collection only
+    } else {
+        // During code generation phase, process the imported file for code generation
+        driver.processFile(resolvedFilename); // This will process with forSymbolCollection=false
+    }
 
     // Restore previous context
     inImportContext = previousImportContext;

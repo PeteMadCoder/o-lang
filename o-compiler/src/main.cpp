@@ -137,8 +137,8 @@ int main(int argc, char** argv) {
     }
 
     // 7. Link to Executable
-    std::string cmd = "clang -no-pie " + ObjFilename + " -o " + FinalOutput + " -lm";
-    
+    std::string cmd = "clang -no-pie " + ObjFilename + " -o " + FinalOutput + " -lm -lc";
+
     // Add libraries
     for (const auto& lib : LinkLibs) {
         cmd += " -l" + lib;

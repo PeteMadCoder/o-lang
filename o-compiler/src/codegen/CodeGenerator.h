@@ -93,6 +93,9 @@ public:
     // Import context tracking
     bool inImportContext = false;
 
+    // Symbol collection mode tracking
+    bool inSymbolCollectionMode = false;
+
     CodeGenerator();
     ~CodeGenerator();
 

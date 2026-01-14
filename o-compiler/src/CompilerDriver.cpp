@@ -97,11 +97,18 @@ void CompilerDriver::processFileInternal(const std::string& filename, bool forSy
         return;
     }
 
-    // 2. Check if already processed
-    if (processedFiles.count(path)) {
-        return; // Already imported
+    // 2. Check if already processed for this phase
+    if (forSymbolCollection) {
+        if (symbolCollectionProcessedFiles.count(path)) {
+            return; // Already processed for symbol collection
+        }
+        symbolCollectionProcessedFiles.insert(path);
+    } else {
+        if (codeGenerationProcessedFiles.count(path)) {
+            return; // Already processed for code generation
+        }
+        codeGenerationProcessedFiles.insert(path);
     }
-    processedFiles.insert(path);
 
     std::cout << "Importing: " << path << "\n";
 
@@ -140,5 +147,5 @@ void CompilerDriver::processFileForImport(const std::string& filename) {
 }
 
 bool CompilerDriver::hasProcessed(const std::string& filename) const {
-    return processedFiles.count(filename);
+    return symbolCollectionProcessedFiles.count(filename) || codeGenerationProcessedFiles.count(filename);
 }
