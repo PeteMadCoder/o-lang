@@ -685,8 +685,8 @@ std::unique_ptr<ExprAST> Parser::ParseExpression() {
 }
 
 std::unique_ptr<ExprAST> Parser::ParseVarDecl() {
-    TokenType declType = curTok.type; // Store whether it's var or let
-    bool isConst = (declType == TokenType::Let);
+    fprintf(stderr, "DEBUG: ParseVarDecl Tok: %d Text: %s\n", (int)curTok.type, curTok.text.c_str());
+    bool isConst = (curTok.type == TokenType::Let);
     getNextToken(); // eat 'var' or 'let'
 
     if (curTok.type != TokenType::Identifier)
@@ -814,6 +814,7 @@ std::unique_ptr<ExprAST> Parser::ParseReturnStmt() {
 }
 
 std::unique_ptr<ExprAST> Parser::ParseStatement() {
+    fprintf(stderr, "DEBUG: ParseStatement Tok: %d Text: %s\n", (int)curTok.type, curTok.text.c_str());
     if (curTok.type == TokenType::Return) {
         return ParseReturnStmt();
     }
@@ -880,6 +881,7 @@ std::unique_ptr<ExprAST> Parser::ParseBlock() {
 }
 
 std::unique_ptr<PrototypeAST> Parser::ParsePrototype() {
+    fprintf(stderr, "DEBUG: ParsePrototype Tok: %d Text: %s\n", (int)curTok.type, curTok.text.c_str());
     if (curTok.type != TokenType::Fn) return LogErrorP("Expected 'fn'");
     getNextToken(); // eat 'fn'
 
@@ -1162,6 +1164,7 @@ std::unique_ptr<ClassDeclAST> Parser::ParseClass() {
 }
 
 bool Parser::ParseTopLevel() {
+    fprintf(stderr, "DEBUG: ParseTopLevel Tok: %d Text: %s\n", (int)curTok.type, curTok.text.c_str());
     if (curTok.type == TokenType::Import) {
         return ParseImport();
     } else if (curTok.type == TokenType::Struct) {

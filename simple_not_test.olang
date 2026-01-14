@@ -1,0 +1,10 @@
+fn main() -> int {
+    var x = true;
+    var result = !x;  // Simple logical NOT
+    
+    if (result) {
+        return 1;  // Should not reach here since !true = false
+    }
+    
+    return 0;  // Expected result
+}

@@ -1,0 +1,14 @@
+fn main() -> int {
+    var a = true;
+    var b = false;
+    
+    // Test logical NOT with AND operation
+    var c = a && b;  // Should be false
+    var d = !c;      // Should be true
+    
+    if (d) {
+        return 0;  // Success
+    } else {
+        return 1;  // Failure
+    }
+}

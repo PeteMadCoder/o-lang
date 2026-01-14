@@ -24,6 +24,8 @@ void SemanticWalker::walk(ExprAST &E) {
         walk(static_cast<DeleteExprAST&>(E));
     } else if (dynamic_cast<NegateExprAST*>(&E)) {
         walk(static_cast<NegateExprAST&>(E));
+    } else if (dynamic_cast<NotExprAST*>(&E)) {
+        walk(static_cast<NotExprAST&>(E));
     } else if (dynamic_cast<BinaryExprAST*>(&E)) {
         walk(static_cast<BinaryExprAST&>(E));
     } else if (dynamic_cast<CallExprAST*>(&E)) {
@@ -124,6 +126,12 @@ void SemanticWalker::walk(BinaryExprAST &E) {
     }
     if (E.getRHS()) {
         walk(*E.getRHS());
+    }
+}
+
+void SemanticWalker::walk(NotExprAST &E) {
+    if (E.getOperand()) {
+        walk(*E.getOperand());
     }
 }
 

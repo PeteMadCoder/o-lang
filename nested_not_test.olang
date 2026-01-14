@@ -1,0 +1,11 @@
+fn main() -> int {
+    var result1 = true;
+    var result2 = false;
+    
+    // This is the exact expression that was causing problems
+    if (!(result1 && result2)) {  // true && false = false, !false = true
+        return 0;  // This should execute
+    } else {
+        return 1;  // This should not execute
+    }
+}

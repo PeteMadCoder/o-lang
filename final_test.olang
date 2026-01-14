@@ -1,0 +1,1 @@
+fn main() -> int { var boolean_value = true; var result = !boolean_value; return 0; }

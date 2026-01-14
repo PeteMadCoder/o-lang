@@ -28,6 +28,7 @@ public:
     void walk(ReturnExprAST &E);
     void walk(DeleteExprAST &E);
     void walk(NegateExprAST &E);
+    void walk(NotExprAST &E);
     void walk(BinaryExprAST &E);
     void walk(CallExprAST &E);
     void walk(MethodCallExprAST &E);

@@ -37,6 +37,8 @@ llvm::Value *ExpressionCodeGen::codegen(ExprAST &E) {
         result = codegen(static_cast<DeleteExprAST&>(E));
     } else if (dynamic_cast<NegateExprAST*>(&E)) {
         result = codegen(static_cast<NegateExprAST&>(E));
+    } else if (dynamic_cast<NotExprAST*>(&E)) {
+        result = codegen(static_cast<NotExprAST&>(E));
     } else if (dynamic_cast<BinaryExprAST*>(&E)) {
         result = codegen(static_cast<BinaryExprAST&>(E));
     } else if (dynamic_cast<CallExprAST*>(&E)) {
