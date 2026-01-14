@@ -1,0 +1,19 @@
+fn malloc(size: int) -> *byte;
+fn free(ptr: *byte);
+
+struct SimpleStringWithMalloc {
+    buffer: *byte;
+    length: int;
+
+    new(len: int) {
+        this.length = len;
+        unsafe {
+            this.buffer = malloc(len);
+        }
+    }
+}
+
+fn main() -> int {
+    var s = new SimpleStringWithMalloc(10);
+    return 0;
+}
