@@ -587,6 +587,8 @@ std::unique_ptr<ExprAST> Parser::ParsePostfix() {
 }
 
 std::unique_ptr<ExprAST> Parser::ParseUnary() {
+    fprintf(stderr, "DEBUG: ParseUnary Tok: %d Text: %s\n", (int)curTok.type, curTok.text.c_str());
+
     // Handle address-of operator
     if (curTok.type == TokenType::Ampersand) {
         getNextToken(); // eat '&'
@@ -614,6 +616,14 @@ std::unique_ptr<ExprAST> Parser::ParseUnary() {
         auto Operand = ParseUnary(); // Allow chaining: *(*ptr)
         if (!Operand) return nullptr;
         return std::make_unique<DerefExprAST>(std::move(Operand));
+    }
+    
+    // Handle logical NOT operator (!x)
+    if (curTok.type == TokenType::Bang) {
+        getNextToken(); // eat '!'
+        auto Operand = ParseUnary(); // Allow chaining: !!x
+        if (!Operand) return nullptr;
+        return std::make_unique<NotExprAST>(std::move(Operand));
     }
     
     // Otherwise, parse postfix expression

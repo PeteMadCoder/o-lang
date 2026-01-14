@@ -22,6 +22,7 @@ public:
     llvm::Value *codegen(ReturnExprAST &E);
     llvm::Value *codegen(DeleteExprAST &E);
     llvm::Value *codegen(NegateExprAST &E);
+    llvm::Value *codegen(NotExprAST &E);
     llvm::Value *codegen(BinaryExprAST &E);
     llvm::Value *codegen(CallExprAST &E);
     llvm::Value *codegen(MethodCallExprAST &E);

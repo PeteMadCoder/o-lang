@@ -385,6 +385,18 @@ llvm::Value *ExpressionCodeGen::codegen(NegateExprAST &E) {
     return nullptr;
 }
 
+llvm::Value *ExpressionCodeGen::codegen(NotExprAST &E) {
+    llvm::Value *Val = codegen(*E.getOperand());
+    if (!Val) return nullptr;
+
+    if (Val->getType()->isIntegerTy(1)) {
+        return codeGen.Builder->CreateNot(Val, "nottmp");
+    }
+
+    codeGen.logError("Invalid type for logical NOT (!). Expected boolean.");
+    return nullptr;
+}
+
 llvm::Value *ExpressionCodeGen::codegen(BinaryExprAST &E) {
     // Handle short-circuiting logical operators
     if (E.getOp() == "&&" || E.getOp() == "||") {

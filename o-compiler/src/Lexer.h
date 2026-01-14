@@ -22,7 +22,7 @@ enum class TokenType {
     // Operators
     Plus, Minus, Star, Slash, Mod, Equal, NotEqual, Less, Greater, LessEqual, GreaterEqual,
     Assign, Ampersand, Arrow, Dot, Comma, Semicolon, Colon, EqualEqual,
-    LogicalAnd, LogicalOr,
+    LogicalAnd, LogicalOr, Bang,
     
     // Delimiters
     LParen, RParen, LBrace, RBrace, LBracket, RBracket

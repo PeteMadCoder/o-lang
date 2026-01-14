@@ -954,6 +954,28 @@ public:
     ExprAST* getOperand() { return Operand.get(); }
 };
 
+// 11. Not Node: !x
+class NotExprAST : public ExprAST {
+    std::unique_ptr<ExprAST> Operand;
+public:
+    NotExprAST(std::unique_ptr<ExprAST> Operand)
+        : Operand(std::move(Operand)) {}
+    llvm::Value *codegen() override;
+    OType getOType() const override { return OType(BaseType::Bool); }
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
+                                   CloneMemo& memo) const override {
+
+        auto* raw = new NotExprAST(nullptr);
+
+        raw->Operand = Operand->clone(typeMap, memo);
+
+        return std::unique_ptr<ExprAST>(raw);
+    }
+
+    // Getters for use in code generation
+    ExprAST* getOperand() { return Operand.get(); }
+};
+
 // 8. Updated Prototype to store types
 class PrototypeAST {
     std::string Name;

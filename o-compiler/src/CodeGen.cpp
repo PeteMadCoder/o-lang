@@ -93,6 +93,11 @@ llvm::Value *NegateExprAST::codegen() {
     return GlobalCodeGen->exprCodeGen->codegen(*this);
 }
 
+llvm::Value *NotExprAST::codegen() {
+    if (!GlobalCodeGen) return nullptr;
+    return GlobalCodeGen->exprCodeGen->codegen(*this);
+}
+
 llvm::Value *BinaryExprAST::codegen() {
     if (!GlobalCodeGen) return nullptr;
     return GlobalCodeGen->exprCodeGen->codegen(*this);

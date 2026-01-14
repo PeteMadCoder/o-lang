@@ -1,0 +1,70 @@
+import "std/vector.olang";
+import "std/io.olang";
+
+fn main() -> int {
+    var vec = new Vector<int>();
+    
+    // 1. Test Initial State
+    if (!vec.is_empty()) {
+        return 1; // Error: Should be empty
+    }
+    if (vec.size() != 0) {
+        return 2; // Error: Size should be 0
+    }
+
+    // 2. Test Push & resizing (Force multiple resizes)
+    // Initial capacity is 4. Pushing 10 items should trigger resize at 4 and 8.
+    var i = 0;
+    while (i < 10) {
+        vec.push(i);
+        i = i + 1;
+    }
+
+    if (vec.size() != 10) {
+        return 3; // Error: Size should be 10
+    }
+    if (vec.is_empty()) {
+        return 4; // Error: Should not be empty
+    }
+
+    // 3. Test Index Access
+    if (vec[0] != 0) { return 5; }
+    if (vec[5] != 5) { return 6; }
+    if (vec[9] != 9) { return 7; }
+
+    // 4. Test Modification (if operator overloading supports assignment, otherwise skip)
+    // The current vector implementation doesn't seem to have op_index_set, 
+    // so we can't test vec[i] = x directly unless implemented. 
+    // We'll rely on push/pop for modification for now.
+
+    // 5. Test Pop
+    var val = vec.pop();
+    if (val != 9) { return 8; } // Should return last pushed
+    if (vec.size() != 9) { return 9; }
+
+    val = vec.pop();
+    if (val != 8) { return 10; }
+    if (vec.size() != 8) { return 11; }
+
+    // 6. Test Pop until empty
+    i = 0;
+    while (i < 8) {
+        vec.pop();
+        i = i + 1;
+    }
+
+    if (!vec.is_empty()) { return 12; }
+    if (vec.size() != 0) { return 13; }
+
+    // 7. Test large volume (stress test)
+    i = 0;
+    while (i < 100) {
+        vec.push(i * 2);
+        i = i + 1;
+    }
+    
+    if (vec.size() != 100) { return 14; }
+    if (vec[50] != 100) { return 15; } // 50 * 2 = 100
+
+    return 0; // Success
+}

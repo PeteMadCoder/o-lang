@@ -177,12 +177,10 @@ Token Lexer::next_token() {
             if (peek() == '=') { advance(); return Token{TokenType::EqualEqual, "==", line, col}; }
             if (peek() == '>') { advance(); return Token{TokenType::Arrow, "=>", line, col}; }
             return atom(TokenType::Equal);
-        case '!':
-            if (peek() == '=') { advance(); return Token{TokenType::NotEqual, "!=", line, col}; }
-            return Token{TokenType::EoF, "UNKNOWN", line, col}; // Single ! not supported yet
-            
-        default:
-            // For now, return EOF on unknown char to avoid infinite loop, 
+    case '!':
+        if (peek() == '=') { advance(); return Token{TokenType::NotEqual, "!=", line, col}; }
+        return Token{TokenType::Bang, "!", line, col};
+    default:
             // but normally you'd emit an Error token.
             return Token{TokenType::EoF, "UNKNOWN", line, col}; 
     }
