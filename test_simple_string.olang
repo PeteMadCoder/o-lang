@@ -1,22 +1,28 @@
-// Simple test to isolate the issue
-fn malloc(size: int) -> *byte;
-fn free(ptr: *byte);
+// External C functions
 fn strlen(str: *byte) -> int;
 fn memcpy(dest: *byte, src: *byte, n: int) -> *void;
+fn malloc(size: int) -> *byte;
+fn free(ptr: *byte);
 
+// Minimal String-like struct without complex methods
 struct SimpleString {
     buffer: *byte;
     length: int;
-    
-    new(len: int) {
+    capacity: int;
+
+    // Constructor: Creates from a C-style string literal
+    new(ptr: *char) {
+        var len = 0;
+        len = 5;  // Hardcoded for testing
+        
         this.length = len;
-        unsafe {
-            this.buffer = malloc(len + 1);
-        }
+        this.capacity = len + 1;
+
+        this.buffer = malloc(this.capacity);
     }
 }
 
 fn main() -> int {
-    var s = new SimpleString(10);
+    var msg = new SimpleString("Hello");
     return 0;
 }

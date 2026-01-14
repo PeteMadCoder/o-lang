@@ -1514,25 +1514,30 @@ llvm::Value *ExpressionCodeGen::codegen(NewExprAST &E) {
     }
 
     llvm::Function *Constructor = codeGen.TheModule->getFunction(MangledName);
+    fprintf(stderr, "DEBUG: Looking for constructor function: %s, found: %p\n", MangledName.c_str(), Constructor);
 
     // Fallback to base name if mangled not found (backward compatibility or void args)
     if (!Constructor) {
         Constructor = codeGen.TheModule->getFunction(ConstructorName);
+        fprintf(stderr, "DEBUG: Fallback to base name: %s, found: %p\n", ConstructorName.c_str(), Constructor);
     }
 
     // Try to look up in global registry if still not found
     if (!Constructor) {
         Constructor = codeGen.utilCodeGen->getFunctionFromPrototype(MangledName);
+        fprintf(stderr, "DEBUG: Looking in global registry for mangled: %s, found: %p\n", MangledName.c_str(), Constructor);
     }
 
     // Also try base name in global registry
     if (!Constructor) {
         Constructor = codeGen.utilCodeGen->getFunctionFromPrototype(ConstructorName);
+        fprintf(stderr, "DEBUG: Looking in global registry for base: %s, found: %p\n", ConstructorName.c_str(), Constructor);
     }
 
     // CRITICAL FIX: If constructor is still not found, trigger instantiation request
     // This is especially important when called from within struct methods during instantiation
     if (!Constructor) {
+        fprintf(stderr, "DEBUG: Constructor not found, checking for generic instantiation\n");
         // If this is a generic struct that should have been instantiated but wasn't,
         // trigger instantiation (but do not process queue recursively)
         if (!E.getGenericArgs().empty() && codeGen.GenericStructRegistry.count(E.getClassName()) > 0) {
@@ -1549,6 +1554,16 @@ llvm::Value *ExpressionCodeGen::codegen(NewExprAST &E) {
             if (!Constructor) {
                  Constructor = codeGen.TheModule->getFunction(ConstructorName);
             }
+            fprintf(stderr, "DEBUG: After instantiation, constructor found: %p\n", Constructor);
+        } else {
+            // For non-generic structs, try to trigger any pending instantiations that might define this constructor
+            codeGen.processDeferredInstantiations();
+            // Try one more time after processing instantiations
+            Constructor = codeGen.TheModule->getFunction(MangledName);
+            if (!Constructor) {
+                Constructor = codeGen.TheModule->getFunction(ConstructorName);
+            }
+            fprintf(stderr, "DEBUG: After processing instantiations, constructor found: %p\n", Constructor);
         }
     }
 
@@ -1608,8 +1623,45 @@ llvm::Value *ExpressionCodeGen::codegen(NewExprAST &E) {
             return nullptr;
         }
 
+        fprintf(stderr, "DEBUG: About to call constructor - function: %p, num args: %zu\n", Constructor, CallArgs.size());
+
+        // Perform detailed validation before the call
+        if (!Constructor->getFunctionType()) {
+            fprintf(stderr, "ERROR: Constructor function has no type\n");
+            return nullptr;
+        }
+
+        if (CallArgs.size() != Constructor->arg_size()) {
+            fprintf(stderr, "ERROR: Argument count mismatch - expected: %zu, got: %zu\n",
+                    (size_t)Constructor->arg_size(), CallArgs.size());
+            return nullptr;
+        }
+
+        // Validate each argument type matches the expected parameter type
+        for (size_t i = 0; i < CallArgs.size(); ++i) {
+            if (i >= Constructor->arg_size()) {
+                fprintf(stderr, "ERROR: Argument index %zu exceeds function parameter count %zu\n",
+                        i, (size_t)Constructor->arg_size());
+                return nullptr;
+            }
+
+            llvm::Type *expectedType = Constructor->getFunctionType()->getParamType(i);
+            llvm::Type *actualType = CallArgs[i]->getType();
+
+            fprintf(stderr, "DEBUG: Validating arg %zu - expected: %p, actual: %p\n", i, expectedType, actualType);
+
+            // Basic type compatibility check - for now just make sure both are valid
+            if (!expectedType || !actualType) {
+                fprintf(stderr, "ERROR: Invalid types for arg %zu - expected: %p, actual: %p\n", i, expectedType, actualType);
+                return nullptr;
+            }
+        }
+
+        fprintf(stderr, "DEBUG: All validations passed, about to make constructor call\n");
+
         // Call constructor
-        codeGen.Builder->CreateCall(Constructor, CallArgs);
+        llvm::Value *callResult = codeGen.Builder->CreateCall(Constructor, CallArgs);
+        fprintf(stderr, "DEBUG: Constructor call completed successfully, result: %p\n", callResult);
     } else {
         // Only error if we expected a constructor and didn't find one.
         // Default constructor might be implicit (do nothing).
