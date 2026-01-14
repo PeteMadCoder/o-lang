@@ -237,11 +237,8 @@ public:
     OType getOType() const override { return OType(BaseType::Bool); }
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
                                    CloneMemo& memo) const override {
-        if (auto it = memo.find(this); it != memo.end())
-            return std::unique_ptr<ExprAST>(it->second);
 
         auto* raw = new BoolExprAST(Val);
-        memo[this] = raw;
         return std::unique_ptr<ExprAST>(raw);
     }
 
@@ -259,11 +256,8 @@ public:
     llvm::Value *codegen() override;
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
                                    CloneMemo& memo) const override {
-        if (auto it = memo.find(this); it != memo.end())
-            return std::unique_ptr<ExprAST>(it->second);
 
         auto* raw = new WhileExprAST(nullptr, nullptr);
-        memo[this] = raw;
 
         raw->Cond = Cond->clone(typeMap, memo);
         raw->Body = Body->clone(typeMap, memo);
@@ -290,11 +284,8 @@ public:
     llvm::Value *codegen() override;
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
                                    CloneMemo& memo) const override {
-        if (auto it = memo.find(this); it != memo.end())
-            return std::unique_ptr<ExprAST>(it->second);
 
         auto* raw = new ForExprAST(nullptr, nullptr, nullptr, nullptr);
-        memo[this] = raw;
 
         raw->Init = Init ? Init->clone(typeMap, memo) : nullptr;
         raw->Cond = Cond ? Cond->clone(typeMap, memo) : nullptr;
@@ -323,11 +314,8 @@ public:
     OType getOType() const override { return Type; }
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
                                    CloneMemo& memo) const override {
-        if (auto it = memo.find(this); it != memo.end())
-            return std::unique_ptr<ExprAST>(it->second);
 
         auto* raw = new NumberExprAST(Val, Type.substitute(typeMap));
-        memo[this] = raw;
         return std::unique_ptr<ExprAST>(raw);
     }
 };
@@ -341,11 +329,8 @@ public:
     OType getOType() const override { return OType(BaseType::Char, 1); } // char*
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
                                    CloneMemo& memo) const override {
-        if (auto it = memo.find(this); it != memo.end())
-            return std::unique_ptr<ExprAST>(it->second);
 
         auto* raw = new StringExprAST(Val);
-        memo[this] = raw;
         return std::unique_ptr<ExprAST>(raw);
     }
 
@@ -429,11 +414,8 @@ public:
     OType getOType() const override;
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
                                    CloneMemo& memo) const override {
-        if (auto it = memo.find(this); it != memo.end())
-            return std::unique_ptr<ExprAST>(it->second);
 
         auto* raw = new MemberAccessAST(nullptr, FieldName);
-        memo[this] = raw;
 
         raw->Object = Object->clone(typeMap, memo);
 
@@ -474,11 +456,8 @@ public:
     OType getOType() const override;
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
                                    CloneMemo& memo) const override {
-        if (auto it = memo.find(this); it != memo.end())
-            return std::unique_ptr<ExprAST>(it->second);
 
         auto* raw = new AddressOfExprAST(nullptr);
-        memo[this] = raw;
 
         raw->Operand = Operand->clone(typeMap, memo);
 
@@ -500,11 +479,8 @@ public:
     OType getOType() const override;
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
                                    CloneMemo& memo) const override {
-        if (auto it = memo.find(this); it != memo.end())
-            return std::unique_ptr<ExprAST>(it->second);
 
         auto* raw = new DerefExprAST(nullptr);
-        memo[this] = raw;
 
         raw->Operand = Operand->clone(typeMap, memo);
 
@@ -527,14 +503,11 @@ public:
     OType getOType() const override { return OType(BaseType::Struct, 1, ClassName, {}, GenericArgs); } // Returns pointer to struct
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
                                    CloneMemo& memo) const override {
-        if (auto it = memo.find(this); it != memo.end())
-            return std::unique_ptr<ExprAST>(it->second);
 
         OType temp(BaseType::Struct, 0, ClassName, {}, GenericArgs);
         temp = temp.substitute(typeMap);
 
         auto* raw = new NewExprAST(temp.structName, {}, temp.genericArgs);
-        memo[this] = raw;
 
         std::vector<std::unique_ptr<ExprAST>> NewArgs;
         for(const auto& a : Args) NewArgs.push_back(a->clone(typeMap, memo));
@@ -560,11 +533,8 @@ public:
     OType getOType() const override;
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
                                    CloneMemo& memo) const override {
-        if (auto it = memo.find(this); it != memo.end())
-            return std::unique_ptr<ExprAST>(it->second);
 
         auto* raw = new NewArrayExprAST(ElementType.substitute(typeMap), nullptr);
-        memo[this] = raw;
 
         raw->Size = Size->clone(typeMap, memo);
 
@@ -588,11 +558,8 @@ public:
     OType getOType() const override;
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
                                    CloneMemo& memo) const override {
-        if (auto it = memo.find(this); it != memo.end())
-            return std::unique_ptr<ExprAST>(it->second);
 
         auto* raw = new IndexExprAST(nullptr, nullptr);
-        memo[this] = raw;
 
         raw->Array = Array->clone(typeMap, memo);
         raw->Index = Index->clone(typeMap, memo);
@@ -616,11 +583,8 @@ public:
     OType getOType() const override { return OType(ElementType.base, ElementType.pointerDepth, ElementType.structName, Size); }
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
                                    CloneMemo& memo) const override {
-        if (auto it = memo.find(this); it != memo.end())
-            return std::unique_ptr<ExprAST>(it->second);
 
         auto* raw = new ArrayLiteralExprAST(ElementType.substitute(typeMap), Size);
-        memo[this] = raw;
         return std::unique_ptr<ExprAST>(raw);
     }
 
@@ -641,11 +605,8 @@ public:
     OType getOType() const override { return getType(); }
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
                                    CloneMemo& memo) const override {
-        if (auto it = memo.find(this); it != memo.end())
-            return std::unique_ptr<ExprAST>(it->second);
 
         auto* raw = new ArrayInitExprAST({}, ElementType.substitute(typeMap));
-        memo[this] = raw;
 
         std::vector<std::unique_ptr<ExprAST>> NewElements;
         for(const auto& e : Elements) NewElements.push_back(e->clone(typeMap, memo));
@@ -673,8 +634,6 @@ public:
     OType getOType() const override;
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
                                    CloneMemo& memo) const override {
-        if (auto it = memo.find(this); it != memo.end())
-            return std::unique_ptr<ExprAST>(it->second);
 
         std::string newTypeName = TypeName;
         if (!TypeName.empty()) {
@@ -684,7 +643,6 @@ public:
         }
 
         auto* raw = new VariableExprAST(Name, newTypeName);
-        memo[this] = raw;
         return std::unique_ptr<ExprAST>(raw);
     }
 
@@ -704,11 +662,8 @@ public:
     OType getOType() const override;
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
                                    CloneMemo& memo) const override {
-        if (auto it = memo.find(this); it != memo.end())
-            return std::unique_ptr<ExprAST>(it->second);
 
         auto* raw = new BinaryExprAST(Op, nullptr, nullptr);
-        memo[this] = raw;
 
         raw->LHS = LHS->clone(typeMap, memo);
         raw->RHS = RHS->clone(typeMap, memo);
@@ -734,11 +689,8 @@ public:
     OType getOType() const override;
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
                                    CloneMemo& memo) const override {
-        if (auto it = memo.find(this); it != memo.end())
-            return std::unique_ptr<ExprAST>(it->second);
 
         auto* raw = new CallExprAST(Callee, {});
-        memo[this] = raw;
 
         std::vector<std::unique_ptr<ExprAST>> NewArgs;
         for(const auto& a : Args) NewArgs.push_back(a->clone(typeMap, memo));
@@ -766,11 +718,8 @@ public:
     OType getOType() const override;
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
                                    CloneMemo& memo) const override {
-        if (auto it = memo.find(this); it != memo.end())
-            return std::unique_ptr<ExprAST>(it->second);
 
         auto* raw = new MethodCallExprAST(nullptr, MethodName, {});
-        memo[this] = raw;
 
         raw->Object = Object->clone(typeMap, memo);
 
@@ -797,25 +746,13 @@ public:
     llvm::Value *codegen() override;
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
                                    CloneMemo& memo) const override {
-        fprintf(stderr, "DEBUG BlockExprAST::clone: this=%p, memo.size()=%zu\n", (void*)this, memo.size());
-        fflush(stderr);
-        if (auto it = memo.find(this); it != memo.end()) {
-            fprintf(stderr, "DEBUG BlockExprAST::clone: found in memo, returning cached\n");
-            fflush(stderr);
-            return std::unique_ptr<ExprAST>(it->second);
-        }
 
         auto* raw = new BlockExprAST({});
-        fprintf(stderr, "DEBUG BlockExprAST::clone: created new BlockExprAST=%p\n", (void*)raw);
-        fflush(stderr);
-        memo[this] = raw;
 
         std::vector<std::unique_ptr<ExprAST>> NewExprs;
         for(const auto& e : Expressions) NewExprs.push_back(e->clone(typeMap, memo));
         raw->Expressions = std::move(NewExprs);
 
-        fprintf(stderr, "DEBUG BlockExprAST::clone: returning %p\n", (void*)raw);
-        fflush(stderr);
         return std::unique_ptr<ExprAST>(raw);
     }
 
@@ -835,11 +772,8 @@ public:
     OType getOType() const override { return Then->getOType(); }
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
                                    CloneMemo& memo) const override {
-        if (auto it = memo.find(this); it != memo.end())
-            return std::unique_ptr<ExprAST>(it->second);
 
         auto* raw = new IfExprAST(nullptr, nullptr, nullptr);
-        memo[this] = raw;
 
         raw->Cond = Cond->clone(typeMap, memo);
         raw->Then = Then->clone(typeMap, memo);
@@ -882,11 +816,8 @@ public:
     }
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
                                    CloneMemo& memo) const override {
-        if (auto it = memo.find(this); it != memo.end())
-            return std::unique_ptr<ExprAST>(it->second);
 
         auto* raw = new MatchExprAST(nullptr, {});
-        memo[this] = raw;
 
         std::vector<MatchCase> NewCases;
         for (const auto& c : Cases) NewCases.push_back(c.clone(typeMap, memo));
@@ -918,11 +849,8 @@ public:
     bool getIsConst() const { return IsConst; } // <--- New getter
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
                                    CloneMemo& memo) const override {
-        if (auto it = memo.find(this); it != memo.end())
-            return std::unique_ptr<ExprAST>(it->second);
 
         auto* raw = new VarDeclExprAST(Name, nullptr, ExplicitType.substitute(typeMap), HasExplicitType, IsConst);
-        memo[this] = raw;
 
         raw->Init = Init ? Init->clone(typeMap, memo) : nullptr;
 
@@ -947,11 +875,8 @@ public:
     OType getOType() const override { return RHS->getOType(); }
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
                                    CloneMemo& memo) const override {
-        if (auto it = memo.find(this); it != memo.end())
-            return std::unique_ptr<ExprAST>(it->second);
 
         auto* raw = new AssignmentExprAST(nullptr, nullptr);
-        memo[this] = raw;
 
         raw->LHS = LHS->clone(typeMap, memo);
         raw->RHS = RHS->clone(typeMap, memo);
@@ -973,11 +898,8 @@ public:
     llvm::Value *codegen() override;
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
                                    CloneMemo& memo) const override {
-        if (auto it = memo.find(this); it != memo.end())
-            return std::unique_ptr<ExprAST>(it->second);
 
         auto* raw = new ReturnExprAST(nullptr);
-        memo[this] = raw;
 
         raw->RetVal = RetVal ? RetVal->clone(typeMap, memo) : nullptr;
 
@@ -998,11 +920,8 @@ public:
     OType getOType() const override { return OType(BaseType::Void); }
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
                                    CloneMemo& memo) const override {
-        if (auto it = memo.find(this); it != memo.end())
-            return std::unique_ptr<ExprAST>(it->second);
 
         auto* raw = new DeleteExprAST(nullptr);
-        memo[this] = raw;
 
         raw->Operand = Operand->clone(typeMap, memo);
 
@@ -1023,11 +942,8 @@ public:
     OType getOType() const override { return Operand->getOType(); }
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
                                    CloneMemo& memo) const override {
-        if (auto it = memo.find(this); it != memo.end())
-            return std::unique_ptr<ExprAST>(it->second);
 
         auto* raw = new NegateExprAST(nullptr);
-        memo[this] = raw;
 
         raw->Operand = Operand->clone(typeMap, memo);
 
@@ -1123,11 +1039,8 @@ public:
 
     std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
                                    CloneMemo& memo) const override {
-        if (auto it = memo.find(this); it != memo.end())
-            return std::unique_ptr<ExprAST>(it->second);
 
         auto* raw = new CastExprAST(nullptr, TargetType.substitute(typeMap));
-        memo[this] = raw;
 
         raw->Operand = Operand->clone(typeMap, memo);
 

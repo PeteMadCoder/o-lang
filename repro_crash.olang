@@ -1,0 +1,17 @@
+struct Vector {
+    count: int;
+    new() { this.count = 0; }
+    fn pop() {
+        if (1 < 2) {
+            exit(1);
+        }
+    }
+}
+
+fn exit(code: int);
+
+fn main() -> int {
+    var v = new Vector();
+    v.pop();
+    return 0;
+}

@@ -543,6 +543,8 @@ llvm::Value *ExpressionCodeGen::codegen(BinaryExprAST &E) {
 }
 
 llvm::Value *ExpressionCodeGen::codegen(CallExprAST &E) {
+    fprintf(stderr, "DEBUG: CallExprAST::codegen for %p\n", &E);
+    fprintf(stderr, "DEBUG: Callee: %s\n", E.getCallee().c_str());
     llvm::Function *CalleeF = codeGen.TheModule->getFunction(E.getCallee());
     if (!CalleeF) {
         // Check if this is a well-known external C function that should be pre-declared
@@ -1030,11 +1032,18 @@ llvm::Value *ExpressionCodeGen::codegen(MethodCallExprAST &E) {
 }
 
 llvm::Value *ExpressionCodeGen::codegen(BlockExprAST &E) {
+    fprintf(stderr, "DEBUG: BlockExprAST::codegen for %p\n", &E);
     codeGen.enterScope();
     llvm::Value *LastVal = nullptr;
     for (auto &Expr : E.getExpressions()) {
+        fprintf(stderr, "DEBUG: BlockExprAST iterating expr %p\n", Expr.get());
+        if (!Expr) {
+            fprintf(stderr, "DEBUG: BlockExprAST found null expr!\n");
+            continue;
+        }
         LastVal = codegen(*Expr);
         if (!LastVal) {
+             fprintf(stderr, "DEBUG: BlockExprAST codegen failed for expr %p\n", Expr.get());
              codeGen.exitScope();
              return nullptr;
         }
@@ -1049,6 +1058,9 @@ llvm::Value *ExpressionCodeGen::codegen(BlockExprAST &E) {
 }
 
 llvm::Value *ExpressionCodeGen::codegen(IfExprAST &E) {
+    fprintf(stderr, "DEBUG: IfExprAST::codegen for %p\n", &E);
+    fprintf(stderr, "DEBUG: IfExprAST Cond=%p, Then=%p, Else=%p\n", E.getCond(), E.getThen(), E.getElse());
+    
     llvm::Value *CondV = codegen(*E.getCond());
     if (!CondV) return nullptr;
 
