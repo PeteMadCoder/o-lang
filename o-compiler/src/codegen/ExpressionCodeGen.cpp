@@ -1174,10 +1174,12 @@ llvm::Value *ExpressionCodeGen::codegen(IfExprAST &E) {
         fprintf(stderr, "DEBUG: Else branch (implicit). ThenV type is void: %d\n", ThenV->getType()->isVoidTy());
         fflush(stderr);
         if (ThenV->getType()->isVoidTy()) {
-             fprintf(stderr, "DEBUG: CRASH IMMINENT: calling getNullValue(VoidTy)\n");
+             fprintf(stderr, "DEBUG: AVOIDED CRASH: skipping getNullValue(VoidTy)\n");
              fflush(stderr);
+             ElseV = nullptr; // Won't be used anyway
+        } else {
+             ElseV = llvm::Constant::getNullValue(ThenV->getType());
         }
-        ElseV = llvm::Constant::getNullValue(ThenV->getType());
     }
 
     bool ElseTerminated = (codeGen.Builder->GetInsertBlock()->getTerminator() != nullptr);
