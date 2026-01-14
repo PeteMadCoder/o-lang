@@ -359,12 +359,29 @@ void SemanticWalker::enqueueStructInstantiation(const std::string& baseName, con
     codeGen.instantiationManager->enqueue(req);
 }
 
+void SemanticWalker::walk(UnresolvedNewExprAST &E) {
+    // This is where we resolve the unresolved new expression to a proper NewExprAST
+    // Check if the struct exists and the constructor can be resolved
+
+    // Check if this is creating a generic type instance
+    if (E.getOType().base == BaseType::Struct && !E.getOType().genericArgs.empty()) {
+        enqueueStructInstantiation(E.getOType().structName, E.getOType().genericArgs);
+    }
+
+    // Walk all the argument expressions
+    for (auto& arg : E.getArgs()) {
+        if (arg) {
+            walk(*arg);
+        }
+    }
+}
+
 void SemanticWalker::enqueueMethodInstantiation(const std::string& baseName, const std::string& methodName, const std::vector<OType>& typeArgs) {
     InstantiationRequest req;
     req.kind = InstantiationRequest::Method;
     req.baseName = baseName;
     req.typeArgs = typeArgs;
     req.methodName = methodName;
-    
+
     codeGen.instantiationManager->enqueue(req);
 }

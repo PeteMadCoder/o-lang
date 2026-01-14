@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CodeGenerator.h"
+#include "../AST.h"  // Include AST.h to get UnresolvedNewExprAST
 
 class ExpressionCodeGen {
 private:
@@ -34,6 +35,7 @@ public:
     llvm::Value *codegen(DerefExprAST &E);
     llvm::Value *codegen(NewExprAST &E);
     llvm::Value *codegen(NewArrayExprAST &E);
+    llvm::Value *codegen(UnresolvedNewExprAST &E);
     llvm::Value *codegen(MatchExprAST &E);
     llvm::Value *codegen(IndexExprAST &E);
     llvm::Value *codegen(MemberAccessAST &E);

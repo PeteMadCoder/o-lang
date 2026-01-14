@@ -19,12 +19,16 @@ void InitializeModuleAndPassManager();
 extern std::unique_ptr<llvm::Module> TheModule;
 
 #include "CompilerDriver.h"
+#include "codegen/CodeGenerator.h"
 
 // Forward declarations for three-phase architecture
 void processDeferredInstantiations();
 void semanticDiscoveryPhase();
 void validationPhase();
 void codeGenerationPhase();
+
+// Declaration of GlobalCodeGen
+extern std::unique_ptr<CodeGenerator> GlobalCodeGen;
 
 namespace cl = llvm::cl;
 
@@ -61,11 +65,13 @@ int main(int argc, char** argv) {
 
     std::cout << "Compiling: " << InputFilename << "\n";
 
-    // 3. Process File
+    // 3. Process File - Phase 1: Symbol Collection (Import Phase)
+    // This phase only collects symbols, no expression resolution
     driver.processFile(InputFilename);
 
     // 4. NEW THREE-PHASE ARCHITECTURE
     // Phase 1: Semantic Discovery - Discover all required instantiations
+    // This phase walks all expressions and resolves constructors, method calls, etc.
     semanticDiscoveryPhase();
 
     // Phase 2: Validation - Validate the semantic graph

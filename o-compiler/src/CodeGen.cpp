@@ -148,6 +148,11 @@ llvm::Value *DerefExprAST::codegenAddress() {
     return GlobalCodeGen->exprCodeGen->codegenAddress(*this);
 }
 
+llvm::Value *UnresolvedNewExprAST::codegen() {
+    if (!GlobalCodeGen) return nullptr;
+    return GlobalCodeGen->exprCodeGen->codegen(*this);
+}
+
 llvm::Value *NewExprAST::codegen() {
     if (!GlobalCodeGen) return nullptr;
     return GlobalCodeGen->exprCodeGen->codegen(*this);
@@ -200,23 +205,31 @@ llvm::Function *PrototypeAST::codegen() {
 
 llvm::Function *FunctionAST::codegen() {
     if (!GlobalCodeGen) return nullptr;
-    return GlobalCodeGen->funcCodeGen->codegen(*this);
+    // Only generate function code if not in import context
+    if (!GlobalCodeGen->inImportContext) {
+        return GlobalCodeGen->funcCodeGen->codegen(*this);
+    }
+    return nullptr; // Just return null during import
 }
 
 void StructDeclAST::codegen() {
     if (!GlobalCodeGen) return;
-    // First, resolve semantics (no LLVM IR generation)
+    // First, resolve semantics (no LLVM IR generation) - always do this
     GlobalCodeGen->typeResolver->resolve(*this);
-    // Then, generate LLVM IR
-    GlobalCodeGen->typeCodeGen->codegen(*this);
+    // Then, generate LLVM IR - only if not in import context
+    if (!GlobalCodeGen->inImportContext) {
+        GlobalCodeGen->typeCodeGen->codegen(*this);
+    }
 }
 
 void ClassDeclAST::codegen() {
     if (!GlobalCodeGen) return;
-    // First, resolve semantics (no LLVM IR generation)
+    // First, resolve semantics (no LLVM IR generation) - always do this
     GlobalCodeGen->typeResolver->resolve(*this);
-    // Then, generate LLVM IR
-    GlobalCodeGen->typeCodeGen->codegen(*this);
+    // Then, generate LLVM IR - only if not in import context
+    if (!GlobalCodeGen->inImportContext) {
+        GlobalCodeGen->typeCodeGen->codegen(*this);
+    }
 }
 
 llvm::Function *ConstructorAST::codegen(const std::string& structName) {

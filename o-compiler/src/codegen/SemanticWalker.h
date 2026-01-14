@@ -45,6 +45,7 @@ public:
     void walk(MemberAccessAST &E);
     void walk(ArrayInitExprAST &E);
     void walk(ArrayLiteralExprAST &E);
+    void walk(UnresolvedNewExprAST &E);
 
 private:
     // Helper methods to enqueue instantiations

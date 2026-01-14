@@ -522,6 +522,37 @@ public:
     std::vector<std::unique_ptr<ExprAST>>& getArgs() { return Args; }
 };
 
+/// UnresolvedNewExprAST - Expression for object instantiation that hasn't been semantically resolved yet
+class UnresolvedNewExprAST : public ExprAST {
+    std::string ClassName;
+    std::vector<OType> GenericArgs;
+    std::vector<std::unique_ptr<ExprAST>> Args;
+public:
+    UnresolvedNewExprAST(const std::string &ClassName, std::vector<std::unique_ptr<ExprAST>> Args, std::vector<OType> GenArgs = {})
+        : ClassName(ClassName), Args(std::move(Args)), GenericArgs(GenArgs) {}
+    llvm::Value *codegen() override;
+    OType getOType() const override { return OType(BaseType::Struct, 1, ClassName, {}, GenericArgs); } // Returns pointer to struct
+    std::unique_ptr<ExprAST> clone(const std::map<std::string, OType>& typeMap,
+                                   CloneMemo& memo) const override {
+
+        OType temp(BaseType::Struct, 0, ClassName, {}, GenericArgs);
+        temp = temp.substitute(typeMap);
+
+        auto* raw = new UnresolvedNewExprAST(temp.structName, {}, temp.genericArgs);
+
+        std::vector<std::unique_ptr<ExprAST>> NewArgs;
+        for(const auto& a : Args) NewArgs.push_back(a->clone(typeMap, memo));
+        raw->Args = std::move(NewArgs);
+
+        return std::unique_ptr<ExprAST>(raw);
+    }
+
+    // Getters for use in semantic resolution
+    const std::string& getClassName() const { return ClassName; }
+    std::vector<OType>& getGenericArgs() { return GenericArgs; }
+    std::vector<std::unique_ptr<ExprAST>>& getArgs() { return Args; }
+};
+
 /// NewArrayExprAST - Expression for array allocation (new int[size])
 class NewArrayExprAST : public ExprAST {
     OType ElementType;

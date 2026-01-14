@@ -90,6 +90,9 @@ public:
     std::unique_ptr<TypeResolver> typeResolver;
     std::unique_ptr<UtilityCodeGen> utilCodeGen;
 
+    // Import context tracking
+    bool inImportContext = false;
+
     CodeGenerator();
     ~CodeGenerator();
 

@@ -12,6 +12,7 @@ class Parser {
     CompilerDriver& driver;
     Token curTok;
     int unsafeDepth = 0; // Track unsafe block nesting depth
+    bool inImportContext = false; // Track if we're currently in an import context
     std::string currentFileDir; // Track current file's directory for relative imports
 
 public:

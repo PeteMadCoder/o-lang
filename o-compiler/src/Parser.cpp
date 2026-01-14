@@ -1,8 +1,12 @@
 #include "Parser.h"
 #include "CompilerDriver.h"
 #include "AST.h"  // Include AST.h to access the global registry functions
+#include "codegen/CodeGenerator.h"  // Include to access GlobalCodeGen
 #include <iostream>
 #include <cassert>
+
+// Forward declaration of GlobalCodeGen
+extern std::unique_ptr<CodeGenerator> GlobalCodeGen;
 
 // Operator Precedence Table
 static std::map<char, int> BinopPrecedence = {
@@ -15,7 +19,7 @@ static std::map<char, int> BinopPrecedence = {
     {'%', 40}
 };
 
-Parser::Parser(Lexer& lex, CompilerDriver& drv) : lexer(lex), driver(drv), currentFileDir(".") {
+Parser::Parser(Lexer& lex, CompilerDriver& drv) : lexer(lex), driver(drv), inImportContext(false), currentFileDir(".") {
     getNextToken(); // Prime the pump
 
     // Verify initial safety state
@@ -23,7 +27,7 @@ Parser::Parser(Lexer& lex, CompilerDriver& drv) : lexer(lex), driver(drv), curre
     assert(!isInUnsafeContext());
 }
 
-Parser::Parser(Lexer& lex, CompilerDriver& drv, const std::string& currentFile) : lexer(lex), driver(drv) {
+Parser::Parser(Lexer& lex, CompilerDriver& drv, const std::string& currentFile) : lexer(lex), driver(drv), inImportContext(false) {
     // Extract directory from current file path
     size_t lastSlash = currentFile.find_last_of("/\\");
     if (lastSlash != std::string::npos) {
@@ -284,7 +288,12 @@ std::unique_ptr<ExprAST> Parser::ParseNewExpr() {
     }
     getNextToken(); // eat ')'
     
-    return std::make_unique<NewExprAST>(ClassName, std::move(Args), GenericArgs);
+    // If we're in import context, create unresolved expression to prevent premature constructor lookup
+    if (inImportContext) {
+        return std::make_unique<UnresolvedNewExprAST>(ClassName, std::move(Args), GenericArgs);
+    } else {
+        return std::make_unique<NewExprAST>(ClassName, std::move(Args), GenericArgs);
+    }
 }
 
 std::unique_ptr<ExprAST> Parser::ParseArrayTypeExpr() {
@@ -1170,22 +1179,33 @@ bool Parser::ParseTopLevel() {
     } else if (curTok.type == TokenType::Struct) {
         auto structAST = ParseStruct();
         if (structAST) {
-            structAST->codegen();
+            // Only generate code if we're not in import context
+            if (!inImportContext) {
+                structAST->codegen();
+            }
             return true;
         }
         return false;
     } else if (curTok.type == TokenType::Class || curTok.type == TokenType::Open) {
         auto classAST = ParseClass();
         if (classAST) {
-            classAST->codegen();
+            // Only generate code if we're not in import context
+            if (!inImportContext) {
+                classAST->codegen();
+            }
             return true;
         }
         return false;
     } else if (curTok.type == TokenType::Fn) {
         auto funcAST = ParseDefinition();
         if (funcAST) {
-            auto *IR = funcAST->codegen();
-            return IR != nullptr;
+            // Only generate code if we're not in import context
+            if (!inImportContext) {
+                auto *IR = funcAST->codegen();
+                return IR != nullptr;
+            } else {
+                return true; // Just parse without generating code
+            }
         }
         return false;
     }
@@ -1328,7 +1348,25 @@ bool Parser::ParseImport() {
         resolvedFilename = currentFileDir + "/" + filename;
     }
 
+    // Set import context before processing the file
+    bool previousImportContext = inImportContext;
+    inImportContext = true;
+
+    // Also update the global code generator's import context if available
+    if (GlobalCodeGen) {
+        GlobalCodeGen->inImportContext = true;
+    }
+
     driver.processFile(resolvedFilename);
+
+    // Restore previous context
+    inImportContext = previousImportContext;
+
+    // Also restore the global code generator's import context if available
+    if (GlobalCodeGen) {
+        GlobalCodeGen->inImportContext = previousImportContext;
+    }
+
     return true;
 }
 

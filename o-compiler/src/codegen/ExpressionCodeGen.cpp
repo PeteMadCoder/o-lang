@@ -59,6 +59,8 @@ llvm::Value *ExpressionCodeGen::codegen(ExprAST &E) {
         result = codegen(static_cast<DerefExprAST&>(E));
     } else if (dynamic_cast<NewExprAST*>(&E)) {
         result = codegen(static_cast<NewExprAST&>(E));
+    } else if (dynamic_cast<UnresolvedNewExprAST*>(&E)) {
+        result = codegen(static_cast<UnresolvedNewExprAST&>(E));
     } else if (dynamic_cast<NewArrayExprAST*>(&E)) {
         result = codegen(static_cast<NewArrayExprAST&>(E));
     } else if (dynamic_cast<MatchExprAST*>(&E)) {
@@ -1412,6 +1414,13 @@ llvm::Value *ExpressionCodeGen::codegenAddress(DerefExprAST &E) {
     return PtrValue; // Return the pointer itself for assignment target
 }
 
+llvm::Value *ExpressionCodeGen::codegen(UnresolvedNewExprAST &E) {
+    // During import phase, unresolved expressions should not be codegen'd
+    // This indicates a problem with the three-phase architecture
+    codeGen.logError("UnresolvedNewExprAST should not reach codegen phase - semantic resolution incomplete");
+    return nullptr;
+}
+
 llvm::Value *ExpressionCodeGen::codegen(NewExprAST &E) {
     std::string LookupName = E.getClassName();
 
@@ -1491,61 +1500,44 @@ llvm::Value *ExpressionCodeGen::codegen(NewExprAST &E) {
         MangledName = codeGen.utilCodeGen->mangleGenericName(ConstructorName, argTypes);
     }
 
-    // Debug
-    std::cerr << "Looking for constructor: " << MangledName << " (base: " << ConstructorName << ")\n";
-    std::cerr << "LookupName: " << LookupName << ", Args count: " << E.getArgs().size() << "\n";
-
     llvm::Function *Constructor = codeGen.TheModule->getFunction(MangledName);
-    std::cerr << "Found constructor via mangled name: " << (Constructor ? "YES" : "NO") << "\n";
 
     // Fallback to base name if mangled not found (backward compatibility or void args)
     if (!Constructor) {
         Constructor = codeGen.TheModule->getFunction(ConstructorName);
-        std::cerr << "Found constructor via base name: " << (Constructor ? "YES" : "NO") << "\n";
     }
 
     // Try to look up in global registry if still not found
     if (!Constructor) {
         Constructor = codeGen.utilCodeGen->getFunctionFromPrototype(MangledName);
-        std::cerr << "Found constructor via global registry (mangled): " << (Constructor ? "YES" : "NO") << "\n";
     }
 
     // Also try base name in global registry
     if (!Constructor) {
         Constructor = codeGen.utilCodeGen->getFunctionFromPrototype(ConstructorName);
-        std::cerr << "Found constructor via global registry (base): " << (Constructor ? "YES" : "NO") << "\n";
     }
 
     // CRITICAL FIX: If constructor is still not found, trigger instantiation request
     // This is especially important when called from within struct methods during instantiation
     if (!Constructor) {
-        std::cerr << "Constructor not found, checking for instantiation...\n";
         // If this is a generic struct that should have been instantiated but wasn't,
         // trigger instantiation (but do not process queue recursively)
         if (!E.getGenericArgs().empty() && codeGen.GenericStructRegistry.count(E.getClassName()) > 0) {
-            std::cerr << "Triggering instantiation of generic struct: " << E.getClassName() << "\n";
             // This creates the Struct Type and the Constructor PROTOTYPE
             llvm::Type* instantiatedType = codeGen.utilCodeGen->instantiateStruct(E.getClassName(), E.getGenericArgs());
-            std::cerr << "Instantiation result: " << (instantiatedType ? "SUCCESS" : "FAILED") << "\n";
 
             // Look again for the constructor after instantiation (the prototype should exist now)
             Constructor = codeGen.TheModule->getFunction(MangledName);
-            std::cerr << "After instantiation - Found constructor via mangled name: " << (Constructor ? "YES" : "NO") << "\n";
             if (!Constructor) {
                 Constructor = codeGen.TheModule->getFunction(ConstructorName);
-                std::cerr << "After instantiation - Found constructor via base name: " << (Constructor ? "YES" : "NO") << "\n";
             }
 
             // If still not found, check mangling (do not call processDeferredInstantiations here!)
             if (!Constructor) {
                  Constructor = codeGen.TheModule->getFunction(ConstructorName);
             }
-        } else if (!E.getGenericArgs().empty()) {
-            std::cerr << "Generic args provided but struct not found in GenericStructRegistry\n";
         }
     }
-
-    std::cerr << "Final constructor result: " << (Constructor ? "FOUND" : "NOT FOUND") << "\n";
 
     if (Constructor) {
         // Additional safety check for constructor
