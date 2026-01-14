@@ -1,6 +1,7 @@
 {
   "name": "o-lang",
   "displayName": "O Language",
+  "icon": "logo.png",
   "description": "Syntax highlighting for O",
   "version": "0.0.1",
   "engines": { "vscode": "^1.70.0" },
@@ -16,6 +17,11 @@
       "language": "o",
       "scopeName": "source.o",
       "path": "./syntaxes/o.tmLanguage.json"
+    }],
+    "iconThemes": [{
+      "id": "o-icon-theme",
+      "label": "O Icon Theme",
+      "path": "./icons/theme.json"
     }]
   }
 }

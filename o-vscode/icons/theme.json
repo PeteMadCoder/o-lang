@@ -1,0 +1,15 @@
+{
+  "extends": "vscode-icons",
+  "iconDefinitions": {
+    "_o_lang": {
+      "iconPath": "./o-file.svg"
+    }
+  },
+  "fileExtensions": {
+    "o": "_o_lang",
+    "olang": "_o_lang"
+  },
+  "fileNames": {
+    "Ofile": "_o_lang"
+  }
+}
