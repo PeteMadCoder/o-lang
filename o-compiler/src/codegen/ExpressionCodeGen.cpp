@@ -557,8 +557,8 @@ llvm::Value *ExpressionCodeGen::codegen(BinaryExprAST &E) {
 }
 
 llvm::Value *ExpressionCodeGen::codegen(CallExprAST &E) {
-    fprintf(stderr, "DEBUG: CallExprAST::codegen for %p\n", &E);
-    fprintf(stderr, "DEBUG: Callee: %s\n", E.getCallee().c_str());
+    //fprintf(stderr, "DEBUG: CallExprAST::codegen for %p\n", &E);
+    //fprintf(stderr, "DEBUG: Callee: %s\n", E.getCallee().c_str());
     fflush(stderr);
 
     if (!codeGen.TheModule) {
@@ -569,20 +569,20 @@ llvm::Value *ExpressionCodeGen::codegen(CallExprAST &E) {
     llvm::Function *CalleeF = codeGen.TheModule->getFunction(E.getCallee());
     
     if (!CalleeF) {
-        fprintf(stderr, "DEBUG: Function not found in module, checking well-knowns\n");
+        //fprintf(stderr, "DEBUG: Function not found in module, checking well-knowns\n");
         // Check if this is a well-known external C function that should be pre-declared
         if (E.getCallee() == "exit") {
-            fprintf(stderr, "DEBUG: Creating declaration for exit\n");
+            //fprintf(stderr, "DEBUG: Creating declaration for exit\n");
             // Declare exit function: void exit(int)
             std::vector<llvm::Type*> Args;
             Args.push_back(llvm::Type::getInt32Ty(*codeGen.TheContext));
             llvm::FunctionType *FT = llvm::FunctionType::get(
                 llvm::Type::getVoidTy(*codeGen.TheContext), Args, false);
             CalleeF = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "exit", codeGen.TheModule);
-            fprintf(stderr, "DEBUG: Created exit decl at %p\n", (void*)CalleeF);
+            //fprintf(stderr, "DEBUG: Created exit decl at %p\n", (void*)CalleeF);
         }
         else if (E.getCallee() == "malloc") {
-            fprintf(stderr, "DEBUG: Creating declaration for malloc\n");
+            //fprintf(stderr, "DEBUG: Creating declaration for malloc\n");
             // Declare malloc function: void* malloc(size_t)
             std::vector<llvm::Type*> Args;
             Args.push_back(llvm::Type::getInt32Ty(*codeGen.TheContext)); // size_t as int for simplicity
@@ -591,7 +591,7 @@ llvm::Value *ExpressionCodeGen::codegen(CallExprAST &E) {
             CalleeF = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "malloc", codeGen.TheModule);
         }
         else if (E.getCallee() == "free") {
-            fprintf(stderr, "DEBUG: Creating declaration for free\n");
+            //fprintf(stderr, "DEBUG: Creating declaration for free\n");
             // Declare free function: void free(void*)
             std::vector<llvm::Type*> Args;
             Args.push_back(llvm::PointerType::get(*codeGen.TheContext, 0)); // void*
@@ -601,7 +601,7 @@ llvm::Value *ExpressionCodeGen::codegen(CallExprAST &E) {
         }
         // Add other well-known C functions as needed
         else {
-            fprintf(stderr, "DEBUG: Checking global registry for prototype\n");
+            //fprintf(stderr, "DEBUG: Checking global registry for prototype\n");
             // Attempt to recover from missing function during generic instantiation
             // by looking up the prototype in the global registry
             CalleeF = codeGen.utilCodeGen->getFunctionFromPrototype(E.getCallee());
@@ -610,34 +610,36 @@ llvm::Value *ExpressionCodeGen::codegen(CallExprAST &E) {
 
     // 3. --- SEGFAULT PREVENTION ---
     if (!CalleeF) {
-        fprintf(stderr, "DEBUG: Function still null after lookup attempts\n");
+        //fprintf(stderr, "DEBUG: Function still null after lookup attempts\n");
         // This stops the compiler from crashing when Builder->CreateCall(NULL) happens
         codeGen.logError(("Linker Error: Function '" + E.getCallee() + "' is declared but not found during instantiation.").c_str());
         return nullptr;
     }
     // ------------------------------
 
+    /*
     fprintf(stderr, "DEBUG: CalleeF found: %p\n", (void*)CalleeF);
     llvm::errs() << "DEBUG: CalleeF Dump: ";
     CalleeF->print(llvm::errs());
     llvm::errs() << "\n";
+    */
 
     // 4. --- INSERTION POINT CHECK ---
     // Make sure the builder has a valid insertion point before creating the call
     if (!codeGen.Builder->GetInsertBlock()) {
-        fprintf(stderr, "DEBUG: No insertion point!\n");
+        //fprintf(stderr, "DEBUG: No insertion point!\n");
         codeGen.logError(("Call to function '" + E.getCallee() + "' cannot be generated: no insertion point available during instantiation.").c_str());
         return nullptr;
     }
     // -------------------------------
     // Additional null check for function
     if (!CalleeF || !CalleeF->getFunctionType()) {
-        fprintf(stderr, "DEBUG: Invalid function or function type\n");
+        //fprintf(stderr, "DEBUG: Invalid function or function type\n");
         codeGen.logError(("Invalid function or function type for: " + E.getCallee()).c_str());
         return nullptr;
     }
 
-    fprintf(stderr, "DEBUG: Checking arg count. Expected: %u, Got: %zu\n", CalleeF->arg_size(), E.getArgs().size());
+    //fprintf(stderr, "DEBUG: Checking arg count. Expected: %u, Got: %zu\n", CalleeF->arg_size(), E.getArgs().size());
     if (CalleeF->arg_size() != E.getArgs().size()) {
         codeGen.logError("Incorrect # arguments passed");
         return nullptr;
@@ -645,14 +647,14 @@ llvm::Value *ExpressionCodeGen::codegen(CallExprAST &E) {
 
     std::vector<llvm::Value *> ArgsV;
     for (unsigned i = 0, e = E.getArgs().size(); i != e; ++i) {
-        fprintf(stderr, "DEBUG: Processing arg %u\n", i);
+        //fprintf(stderr, "DEBUG: Processing arg %u\n", i);
         llvm::Value *ArgVal = codegen(*E.getArgs()[i]);
         if (!ArgVal) {
             fprintf(stderr, "DEBUG: Arg codegen returned null\n");
             return nullptr;
         }
 
-        llvm::errs() << "DEBUG: ArgVal " << i << " Dump: ";
+        //llvm::errs() << "DEBUG: ArgVal " << i << " Dump: ";
         ArgVal->print(llvm::errs());
         llvm::errs() << "\n";
 
@@ -660,10 +662,10 @@ llvm::Value *ExpressionCodeGen::codegen(CallExprAST &E) {
         llvm::Type *ParamType = CalleeF->getArg(i)->getType();
         llvm::Type *ArgType = ArgVal->getType();
 
-        fprintf(stderr, "DEBUG: Arg Type: %p, Param Type: %p\n", ArgType, ParamType);
+        //fprintf(stderr, "DEBUG: Arg Type: %p, Param Type: %p\n", ArgType, ParamType);
 
         if (ArgType != ParamType) {
-            fprintf(stderr, "DEBUG: Attempting cast\n");
+            //fprintf(stderr, "DEBUG: Attempting cast\n");
             if (ParamType->isIntegerTy() && ArgType->isIntegerTy()) {
                 // Integer Cast
                 if (ArgType->getIntegerBitWidth() < ParamType->getIntegerBitWidth()) {
@@ -697,7 +699,7 @@ llvm::Value *ExpressionCodeGen::codegen(CallExprAST &E) {
         // Check if Arg is Fixed Array Value (Load from Alloca<[N x T]>) -> [N x T]
         // Wait, VariableExprAST loads the value. So ArgVal is [N x T].
         if (IsParamSlice && ArgType->isArrayTy()) {
-             fprintf(stderr, "DEBUG: Handling slice cast\n");
+             //fprintf(stderr, "DEBUG: Handling slice cast\n");
              // We need the address of the array to create the pointer.
              // But ArgVal is the *value* (loaded). We can't take address of value easily without Alloca.
              // However, VariableExprAST::codegen() does CreateLoad.
@@ -748,18 +750,18 @@ llvm::Value *ExpressionCodeGen::codegen(CallExprAST &E) {
         ArgsV.push_back(ArgVal);
     }
 
-    fprintf(stderr, "DEBUG: Creating Call instruction. Builder=%p, Context=%p\n", (void*)codeGen.Builder, (void*)codeGen.TheContext);
+    //fprintf(stderr, "DEBUG: Creating Call instruction. Builder=%p, Context=%p\n", (void*)codeGen.Builder, (void*)codeGen.TheContext);
     
     if (CalleeF->getParent() != codeGen.TheModule) {
         fprintf(stderr, "FATAL: CalleeF belongs to different module! CalleeF Module: %p, TheModule: %p\n", (void*)CalleeF->getParent(), (void*)codeGen.TheModule);
     } else {
-        fprintf(stderr, "DEBUG: CalleeF belongs to TheModule.\n");
+        //fprintf(stderr, "DEBUG: CalleeF belongs to TheModule.\n");
     }
 
     if (codeGen.Builder->GetInsertBlock()->getParent() == nullptr) {
          fprintf(stderr, "FATAL: BasicBlock has no parent function!\n");
     } else {
-         fprintf(stderr, "DEBUG: Inserting into function: %s\n", codeGen.Builder->GetInsertBlock()->getParent()->getName().str().c_str());
+         //fprintf(stderr, "DEBUG: Inserting into function: %s\n", codeGen.Builder->GetInsertBlock()->getParent()->getName().str().c_str());
     }
 
     // Attempt to verify the function we are building (might fail if incomplete, but worth a try)
@@ -770,11 +772,11 @@ llvm::Value *ExpressionCodeGen::codegen(CallExprAST &E) {
         callName = ""; // Void calls cannot have names
     }
 
-    fprintf(stderr, "DEBUG: About to call CreateCall. ArgsV size: %zu\n", ArgsV.size());
+    //fprintf(stderr, "DEBUG: About to call CreateCall. ArgsV size: %zu\n", ArgsV.size());
     fflush(stderr);
 
     llvm::CallInst* CI = codeGen.Builder->CreateCall(CalleeF->getFunctionType(), CalleeF, ArgsV, callName);
-    fprintf(stderr, "DEBUG: CreateCall returned %p\n", (void*)CI);
+    //fprintf(stderr, "DEBUG: CreateCall returned %p\n", (void*)CI);
     return CI;
 }
 
@@ -1108,18 +1110,18 @@ llvm::Value *ExpressionCodeGen::codegen(MethodCallExprAST &E) {
 }
 
 llvm::Value *ExpressionCodeGen::codegen(BlockExprAST &E) {
-    fprintf(stderr, "DEBUG: BlockExprAST::codegen for %p\n", &E);
+    //fprintf(stderr, "DEBUG: BlockExprAST::codegen for %p\n", &E);
     codeGen.enterScope();
     llvm::Value *LastVal = nullptr;
     for (auto &Expr : E.getExpressions()) {
-        fprintf(stderr, "DEBUG: BlockExprAST iterating expr %p\n", Expr.get());
+        //fprintf(stderr, "DEBUG: BlockExprAST iterating expr %p\n", Expr.get());
         if (!Expr) {
-            fprintf(stderr, "DEBUG: BlockExprAST found null expr!\n");
+            //fprintf(stderr, "DEBUG: BlockExprAST found null expr!\n");
             continue;
         }
         LastVal = codegen(*Expr);
         if (!LastVal) {
-             fprintf(stderr, "DEBUG: BlockExprAST codegen failed for expr %p\n", Expr.get());
+             //fprintf(stderr, "DEBUG: BlockExprAST codegen failed for expr %p\n", Expr.get());
              codeGen.exitScope();
              return nullptr;
         }
@@ -1134,8 +1136,8 @@ llvm::Value *ExpressionCodeGen::codegen(BlockExprAST &E) {
 }
 
 llvm::Value *ExpressionCodeGen::codegen(IfExprAST &E) {
-    fprintf(stderr, "DEBUG: IfExprAST::codegen for %p\n", &E);
-    fprintf(stderr, "DEBUG: IfExprAST Cond=%p, Then=%p, Else=%p\n", E.getCond(), E.getThen(), E.getElse());
+    //fprintf(stderr, "DEBUG: IfExprAST::codegen for %p\n", &E);
+    //fprintf(stderr, "DEBUG: IfExprAST Cond=%p, Then=%p, Else=%p\n", E.getCond(), E.getThen(), E.getElse());
     
     llvm::Value *CondV = codegen(*E.getCond());
     if (!CondV) return nullptr;
@@ -1159,20 +1161,20 @@ llvm::Value *ExpressionCodeGen::codegen(IfExprAST &E) {
     llvm::Value *ThenV = codegen(*E.getThen());
     if (!ThenV) return nullptr;
 
-    fprintf(stderr, "DEBUG: IfExprAST Then block generated. ThenV=%p\n", (void*)ThenV);
+    //fprintf(stderr, "DEBUG: IfExprAST Then block generated. ThenV=%p\n", (void*)ThenV);
     if (ThenV->getType()->isVoidTy()) {
-        fprintf(stderr, "DEBUG: ThenV is Void type\n");
+        //fprintf(stderr, "DEBUG: ThenV is Void type\n");
     } else {
-        fprintf(stderr, "DEBUG: ThenV is NOT Void type\n");
+        //fprintf(stderr, "DEBUG: ThenV is NOT Void type\n");
     }
     fflush(stderr);
 
     bool ThenTerminated = (codeGen.Builder->GetInsertBlock()->getTerminator() != nullptr);
-    fprintf(stderr, "DEBUG: ThenTerminated=%d\n", ThenTerminated);
+    //fprintf(stderr, "DEBUG: ThenTerminated=%d\n", ThenTerminated);
     fflush(stderr);
 
     if (!ThenTerminated) {
-        fprintf(stderr, "DEBUG: Creating Branch to MergeBB\n");
+        //fprintf(stderr, "DEBUG: Creating Branch to MergeBB\n");
         codeGen.Builder->CreateBr(MergeBB);
     }
     ThenBB = codeGen.Builder->GetInsertBlock();
@@ -1185,10 +1187,10 @@ llvm::Value *ExpressionCodeGen::codegen(IfExprAST &E) {
         ElseV = codegen(*E.getElse());
         if (!ElseV) return nullptr;
     } else {
-        fprintf(stderr, "DEBUG: Else branch (implicit). ThenV type is void: %d\n", ThenV->getType()->isVoidTy());
+        //fprintf(stderr, "DEBUG: Else branch (implicit). ThenV type is void: %d\n", ThenV->getType()->isVoidTy());
         fflush(stderr);
         if (ThenV->getType()->isVoidTy()) {
-             fprintf(stderr, "DEBUG: AVOIDED CRASH: skipping getNullValue(VoidTy)\n");
+             //fprintf(stderr, "DEBUG: AVOIDED CRASH: skipping getNullValue(VoidTy)\n");
              fflush(stderr);
              ElseV = nullptr; // Won't be used anyway
         } else {
@@ -1226,16 +1228,16 @@ llvm::Value *ExpressionCodeGen::codegen(IfExprAST &E) {
     llvm::Value *FinalElseV = ElseV;
     if (!E.getElse()) {
          // If no else provided, we need a default value.
-         fprintf(stderr, "DEBUG: IfExprAST has no Else block. ThenV Type is Void: %d\n", ThenV->getType()->isVoidTy());
+         //fprintf(stderr, "DEBUG: IfExprAST has no Else block. ThenV Type is Void: %d\n", ThenV->getType()->isVoidTy());
          fflush(stderr);
 
          // For non-void types, this is actually semantic error (missing else in expression), but to prevent crash:
          if (ThenV->getType()->isVoidTy()) {
-             fprintf(stderr, "DEBUG: ThenV is void. About to call getNullValue(VoidTy) which might crash!\n");
+             //fprintf(stderr, "DEBUG: ThenV is void. About to call getNullValue(VoidTy) which might crash!\n");
              fflush(stderr);
          }
          FinalElseV = llvm::Constant::getNullValue(ThenV->getType());
-         fprintf(stderr, "DEBUG: getNullValue returned %p\n", (void*)FinalElseV);
+         //fprintf(stderr, "DEBUG: getNullValue returned %p\n", (void*)FinalElseV);
     }
 
     if (!ElseTerminated) PN->addIncoming(FinalElseV, ElseBB);

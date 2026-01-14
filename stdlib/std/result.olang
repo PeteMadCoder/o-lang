@@ -1,0 +1,23 @@
+
+struct Result<T> {
+    var is_error: bool;
+    var value: T;
+    var err_msg: String;
+
+    // Factory: Success
+    fn ok(T: val) -> Result<T> {
+        var r = new Result<T>();
+        r.is_error = false;
+        r.value = val;
+        // r.err_message is empty/null
+        return r;
+    }
+
+    // Factory: Failure
+    fn err(msg: String) -> Result<T> {
+        var r = new Result<T>();
+        r.is_error = true;
+        r.err_msg = msg;
+        return r;
+    }
+}

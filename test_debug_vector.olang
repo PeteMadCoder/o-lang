@@ -1,5 +1,0 @@
-import "std/vector.olang";
-
-fn main() -> int {
-    return 0;
-}

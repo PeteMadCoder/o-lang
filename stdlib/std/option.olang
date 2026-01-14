@@ -1,0 +1,26 @@
+struct Option<T> {
+    var has_value: bool;
+    var value: T;
+
+    fn some(T: val) -> Option<T> {
+        var o = new Option<T>();
+        o.has_value = true;
+        o.value = val;
+        return o;
+    }
+
+    fn none() -> Option<T> {
+        var o = new Option<T>();
+        o.has_value = false;
+        return o;
+    }
+
+    fn is_some() -> bool {return this.has_value;}
+
+    fn unwrap() -> T {
+        if (!this.has_value) unsafe {
+            // Call exit from here
+        }
+        return this.value;
+    }
+}

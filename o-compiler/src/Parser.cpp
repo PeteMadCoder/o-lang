@@ -587,7 +587,7 @@ std::unique_ptr<ExprAST> Parser::ParsePostfix() {
 }
 
 std::unique_ptr<ExprAST> Parser::ParseUnary() {
-    fprintf(stderr, "DEBUG: ParseUnary Tok: %d Text: %s\n", (int)curTok.type, curTok.text.c_str());
+    //fprintf(stderr, "DEBUG: ParseUnary Tok: %d Text: %s\n", (int)curTok.type, curTok.text.c_str());
 
     // Handle address-of operator
     if (curTok.type == TokenType::Ampersand) {
@@ -685,7 +685,7 @@ std::unique_ptr<ExprAST> Parser::ParseExpression() {
 }
 
 std::unique_ptr<ExprAST> Parser::ParseVarDecl() {
-    fprintf(stderr, "DEBUG: ParseVarDecl Tok: %d Text: %s\n", (int)curTok.type, curTok.text.c_str());
+    //fprintf(stderr, "DEBUG: ParseVarDecl Tok: %d Text: %s\n", (int)curTok.type, curTok.text.c_str());
     bool isConst = (curTok.type == TokenType::Let);
     getNextToken(); // eat 'var' or 'let'
 
@@ -814,7 +814,7 @@ std::unique_ptr<ExprAST> Parser::ParseReturnStmt() {
 }
 
 std::unique_ptr<ExprAST> Parser::ParseStatement() {
-    fprintf(stderr, "DEBUG: ParseStatement Tok: %d Text: %s\n", (int)curTok.type, curTok.text.c_str());
+    //fprintf(stderr, "DEBUG: ParseStatement Tok: %d Text: %s\n", (int)curTok.type, curTok.text.c_str());
     if (curTok.type == TokenType::Return) {
         return ParseReturnStmt();
     }
@@ -881,7 +881,7 @@ std::unique_ptr<ExprAST> Parser::ParseBlock() {
 }
 
 std::unique_ptr<PrototypeAST> Parser::ParsePrototype() {
-    fprintf(stderr, "DEBUG: ParsePrototype Tok: %d Text: %s\n", (int)curTok.type, curTok.text.c_str());
+    //fprintf(stderr, "DEBUG: ParsePrototype Tok: %d Text: %s\n", (int)curTok.type, curTok.text.c_str());
     if (curTok.type != TokenType::Fn) return LogErrorP("Expected 'fn'");
     getNextToken(); // eat 'fn'
 
@@ -1164,7 +1164,7 @@ std::unique_ptr<ClassDeclAST> Parser::ParseClass() {
 }
 
 bool Parser::ParseTopLevel() {
-    fprintf(stderr, "DEBUG: ParseTopLevel Tok: %d Text: %s\n", (int)curTok.type, curTok.text.c_str());
+    //fprintf(stderr, "DEBUG: ParseTopLevel Tok: %d Text: %s\n", (int)curTok.type, curTok.text.c_str());
     if (curTok.type == TokenType::Import) {
         return ParseImport();
     } else if (curTok.type == TokenType::Struct) {
