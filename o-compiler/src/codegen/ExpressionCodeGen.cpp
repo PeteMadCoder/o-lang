@@ -429,6 +429,9 @@ llvm::Value *ExpressionCodeGen::codegen(BinaryExprAST &E) {
         llvm::Value *L = codegen(*E.getLHS());
         if (!L) return nullptr;
 
+        // Update LHSBlock because codegen(LHS) might have changed the insertion block
+        LHSBlock = codeGen.Builder->GetInsertBlock();
+
         // Convert to boolean if needed
         if (!L->getType()->isIntegerTy(1)) {
             if (L->getType()->isDoubleTy()) {
@@ -1120,10 +1123,14 @@ llvm::Value *ExpressionCodeGen::codegen(MethodCallExprAST &E) {
         llvm::FunctionType* funcType = CalleeF->getFunctionType();
         llvm::Value* funcPtr = codeGen.Builder->CreateBitCast(funcVoidPtr, llvm::PointerType::get(funcType, 0), "func_ptr");
 
-        return codeGen.Builder->CreateCall(funcType, funcPtr, ArgsV, "vcalltmp");
+        std::string callName = "vcalltmp";
+        if (funcType->getReturnType()->isVoidTy()) callName = "";
+        return codeGen.Builder->CreateCall(funcType, funcPtr, ArgsV, callName);
     }
 
-    return codeGen.Builder->CreateCall(CalleeF, ArgsV, "calltmp");
+    std::string callName = "calltmp";
+    if (CalleeF->getReturnType()->isVoidTy()) callName = "";
+    return codeGen.Builder->CreateCall(CalleeF, ArgsV, callName);
 }
 
 llvm::Value *ExpressionCodeGen::codegen(BlockExprAST &E) {
