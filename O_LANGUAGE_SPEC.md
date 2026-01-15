@@ -35,7 +35,8 @@
     *   References: `&var` (Address-of), `*ptr` (Dereference).
 
 ### 2.2 Variables & Scoping
-*   **Declaration:** `var name = value;` or `var name = new Type();`.
+*   **Variables:** `var name: type = value;` or `var name: type;` (for uninitialized variables) or `var name: type = new Type();`.
+*   **Constants:** `let name: type = value;` or `let name = value;` (type inference). Constants must be initialized and cannot be reassigned.
 *   **Scoping:** Block-scoped `{ ... }`. Variables declared inside a block are not visible outside.
 *   **Shadowing:** Inner scopes can shadow variables from outer scopes.
 
@@ -75,12 +76,12 @@ struct String {
     *byte buffer;
     int length;
     
-    fn op_add(*String other) -> *String {
+    fn op_add(other: *String) -> *String {
         // String concatenation logic
         return result;
     }
     
-    fn op_index(int idx) -> int {
+    fn op_index(idx: int) -> int {
         unsafe {
             return this.buffer[idx];
         }
@@ -100,10 +101,18 @@ fn main() -> int {
 
 ### 2.7 Functions
 ```o
-fn add(int a, int b) -> int {
+fn add(a: int, b: int) -> int {
     return a + b;
 }
 ```
+
+### 2.8 Modern Syntax Highlights
+The O language uses a modern syntax with explicit type annotations:
+
+*   **Function Parameters:** Parameters are declared with `name: type` syntax (e.g., `fn func(param: int, other: float)`).
+*   **Variable Declarations:** Variables are declared with `var name: type` syntax, optionally followed by initialization (e.g., `var x: int = 5;` or `var y: int;` for uninitialized variables).
+*   **Constant Declarations:** Constants are declared with `let name: type = value` or `let name = value` (with type inference). Constants must be initialized and cannot be reassigned (e.g., `let pi: float = 3.14159;` or `let count = 10;`).
+*   **Return Types:** Function return types are specified with the arrow syntax `-> type`.
 
 ---
 
@@ -191,7 +200,7 @@ oc main.o -l SDL2 -l pthread
 ```o
 struct Box<T> {
     T val;
-    new(T v) { this.val = v; }
+    new(v: T) { this.val = v; }
     fn get() -> T { return this.val; }
 }
 
