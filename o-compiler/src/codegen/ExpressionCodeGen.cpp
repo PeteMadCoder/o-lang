@@ -2063,7 +2063,7 @@ llvm::Value *ExpressionCodeGen::codegen(MemberAccessAST &E) {
     if (!FieldPtr) {
         // Fallback for non-lvalue access (e.g. array.len)
         OType ObjOType = E.getObject()->getOType();
-        if (ObjOType.isArray() && (E.getFieldName() == "len" || E.getFieldName() == "length")) {
+        if (ObjOType.isArray() && ObjOType.getArrayNumElements() != -1 && (E.getFieldName() == "len" || E.getFieldName() == "length")) {
              return llvm::ConstantInt::get(llvm::Type::getInt32Ty(*codeGen.TheContext), ObjOType.getArrayNumElements());
         }
 
@@ -2075,6 +2075,13 @@ llvm::Value *ExpressionCodeGen::codegen(MemberAccessAST &E) {
              if (ObjVal->getType()->isStructTy()) {
                  return codeGen.Builder->CreateExtractValue(ObjVal, 0, "len");
              }
+             
+             // Handle pointer to slice (address)
+             if (ObjVal->getType()->isPointerTy()) {
+                  llvm::Type *SliceType = codeGen.utilCodeGen->getLLVMType(ObjOType);
+                  llvm::Value *LenAddr = codeGen.Builder->CreateStructGEP(SliceType, ObjVal, 0, "len_addr");
+                  return codeGen.Builder->CreateLoad(SliceType->getStructElementType(0), LenAddr, "len");
+             }
          }
 
         // Check for Slice Ptr Property
@@ -2084,6 +2091,13 @@ llvm::Value *ExpressionCodeGen::codegen(MemberAccessAST &E) {
 
              if (ObjVal->getType()->isStructTy()) {
                  return codeGen.Builder->CreateExtractValue(ObjVal, 1, "ptr");
+             }
+             
+             // Handle pointer to slice (address)
+             if (ObjVal->getType()->isPointerTy()) {
+                  llvm::Type *SliceType = codeGen.utilCodeGen->getLLVMType(ObjOType);
+                  llvm::Value *PtrAddr = codeGen.Builder->CreateStructGEP(SliceType, ObjVal, 1, "ptr_addr");
+                  return codeGen.Builder->CreateLoad(SliceType->getStructElementType(1), PtrAddr, "ptr");
              }
          }
 
@@ -2132,6 +2146,13 @@ llvm::Value *ExpressionCodeGen::codegenAddress(MemberAccessAST &E) {
 
     // 2. Resolve Field Info
     OType ObjType = E.getObject()->getOType();
+
+    // Check for Arrays/Slices - they don't have addressable named fields (except via properties handled in codegen)
+    if (ObjType.isArray()) {
+        fprintf(stderr, "DEBUG: Object is array/slice, returning nullptr from codegenAddress\n");
+        return nullptr;
+    }
+
     std::string StructName;
 
     if (ObjType.isPointer()) {

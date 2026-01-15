@@ -2,40 +2,37 @@
 // External C functions
 fn strlen(str: *byte) -> int;
 fn memcpy(dest: *byte, src: *byte, n: int) -> *void;
-fn malloc(size: int) -> *byte;
-fn free(ptr: *byte);
 fn printf(str: *byte);
 
 // --- The String Class ---
 struct String {
-    buffer: *byte;
-    length: int;
-    capacity: int;
+    buffer: byte[]; // Dynamic Array (Slice) - Handles memory automatically
+    length: int;    // Used length (content size)
+    // Capacity is now managed by the slice (buffer.len)
 
     // Constructor: Creates a String from a C-style string literal
     new(ptr: *char) {
         var len = 0;
         unsafe {
-            // Use external strlen
             len = strlen(ptr);
         }
 
         this.length = len;
-        this.capacity = len + 1;
+        
+        // Allocate managed array (slice)
+        // Capacity is len + 1 for null terminator
+        this.buffer = new byte[len + 1];
 
         unsafe {
-            this.buffer = malloc(this.capacity);
-
-            // Use external memcpy.
-            memcpy(this.buffer, ptr, len);
-
-            // Null terminate
-            var end_ptr = this.buffer + len;  // Changed from &this.buffer[len]
-            *end_ptr = 0;
+            // Copy data to the buffer's pointer
+            memcpy(this.buffer.ptr, ptr, len);
+            
+            // Null terminate using safe indexing
+            this.buffer[len] = 0; 
         }
     }
 
     fn c_str() -> *byte {
-        return this.buffer;
+        return this.buffer.ptr;
     }
 }
