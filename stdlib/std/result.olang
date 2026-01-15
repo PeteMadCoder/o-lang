@@ -1,11 +1,13 @@
+import "libc.olang";
+import "string.olang";
 
 struct Result<T> {
-    var is_error: bool;
-    var value: T;
-    var err_msg: String;
+    is_error: bool;
+    value: T;
+    err_msg: String;
 
     // Factory: Success
-    fn ok(val: T) -> Result<T> {
+    static fn ok(val: T) -> Result<T> {
         var r = new Result<T>();
         r.is_error = false;
         r.value = val;
@@ -14,10 +16,26 @@ struct Result<T> {
     }
 
     // Factory: Failure
-    fn err(msg: String) -> Result<T> {
+    static fn err(msg: String) -> Result<T> {
         var r = new Result<T>();
         r.is_error = true;
         r.err_msg = msg;
         return r;
+    }
+
+    // "Give me value or crash"
+    fn unwrap() -> T {
+        if (this.is_error) {
+            exit(1);
+        }
+        return this.value;
+    }
+
+    // "Give me the value or use this default"
+    fn unwrap_or(default_val: T) -> T {
+        if (this.is_error) {
+            return default_val;
+        }
+        return this.value;
     }
 }

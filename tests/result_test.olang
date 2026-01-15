@@ -1,0 +1,10 @@
+import "std/result.olang";
+
+fn main() -> int {
+    // Create a failed result
+    var r = Result.ok(5);
+
+    var r = Result.err("This is a failed result");
+
+    return 0;
+}

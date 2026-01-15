@@ -1,8 +1,10 @@
-struct Option<T> {
-    var has_value: bool;
-    var value: T;
+import "libc.olang";
 
-    fn some(T: val) -> Option<T> {
+struct Option<T> {
+    has_value: bool;
+    value: T;
+
+    fn some(val: T) -> Option<T> {
         var o = new Option<T>();
         o.has_value = true;
         o.value = val;
@@ -19,7 +21,7 @@ struct Option<T> {
 
     fn unwrap() -> T {
         if (!this.has_value) unsafe {
-            // Call exit from here
+            exit(1);
         }
         return this.value;
     }

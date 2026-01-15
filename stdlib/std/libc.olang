@@ -1,0 +1,9 @@
+// this file declares a lot of functions of the C language
+fn exit(status: int);
+fn strlen(str: *byte) -> int;
+fn memcpy(dest: *byte, src: *byte, n: int) -> *void;
+fn malloc(size: int) -> *byte;
+fn free(ptr: *byte);
+fn printf(str: *byte);
+fn memset(ptr: *byte, value: int, n: int) -> *void;
+fn memcmp(ptr1: *byte, ptr2: *byte, n: int) -> int;
