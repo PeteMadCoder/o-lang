@@ -12,6 +12,7 @@
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/IR/LegacyPassManager.h"
+#include "llvm/IR/Verifier.h"
 #include "llvm/Support/CommandLine.h"
 
 // Forward declarations from CodeGen.cpp
@@ -133,6 +134,14 @@ int main(int argc, char** argv) {
     }
     fprintf(stderr, "DEBUG: Passes added successfully\n");
     fflush(stderr);
+
+    fprintf(stderr, "DEBUG: Verifying module...\n");
+    if (llvm::verifyModule(*TheModule, &llvm::errs())) {
+        fprintf(stderr, "Error: Module verification failed!\n");
+        // TheModule->print(llvm::errs(), nullptr); // Print the broken module
+        return 1;
+    }
+    fprintf(stderr, "DEBUG: Module verification passed\n");
 
     fprintf(stderr, "DEBUG: About to run optimization passes on module\n");
     fflush(stderr);

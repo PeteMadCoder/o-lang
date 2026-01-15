@@ -320,6 +320,21 @@ llvm::Value *ExpressionCodeGen::codegen(ReturnExprAST &E) {
     }
 
     if (E.getRetVal()) {
+        llvm::Function *TheFunction = codeGen.Builder->GetInsertBlock()->getParent();
+        llvm::Type *RetType = TheFunction->getReturnType();
+        
+        if (V->getType() != RetType) {
+            // Integer Cast
+            if (V->getType()->isIntegerTy() && RetType->isIntegerTy()) {
+                if (V->getType()->getIntegerBitWidth() < RetType->getIntegerBitWidth()) {
+                    V = codeGen.Builder->CreateZExt(V, RetType, "ret_zext");
+                } else if (V->getType()->getIntegerBitWidth() > RetType->getIntegerBitWidth()) {
+                    V = codeGen.Builder->CreateTrunc(V, RetType, "ret_trunc");
+                }
+            } else if (V->getType()->isPointerTy() && RetType->isPointerTy()) {
+                V = codeGen.Builder->CreateBitCast(V, RetType, "ret_bitcast");
+            }
+        }
         codeGen.Builder->CreateRet(V);
     } else {
         codeGen.Builder->CreateRetVoid();
@@ -1924,6 +1939,24 @@ llvm::Value *ExpressionCodeGen::codegen(IndexExprAST &E) {
         );
 
         return codeGen.Builder->CreateLoad(ElemLLVMType, ElementAddr, "slice_val_load");
+    }
+
+    // Check for Pointer Indexing (ptr[i])
+    if (ArrayOType.isPointer()) {
+         llvm::Value *PtrVal = codegen(*E.getArray());
+         if (!PtrVal) return nullptr;
+
+         llvm::Value *IndexVal = codegen(*E.getIndex());
+         if (!IndexVal) return nullptr;
+
+         OType ElemOType = ArrayOType.getPointeeType();
+         llvm::Type *ElemLLVMType = codeGen.utilCodeGen->getLLVMType(ElemOType);
+
+         std::vector<llvm::Value*> Indices;
+         Indices.push_back(IndexVal);
+
+         llvm::Value* GEP = codeGen.Builder->CreateInBoundsGEP(ElemLLVMType, PtrVal, Indices, "ptridx");
+         return codeGen.Builder->CreateLoad(ElemLLVMType, GEP, "ptrload");
     }
 
     // Fixed Array
