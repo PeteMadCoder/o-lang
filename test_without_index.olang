@@ -1,8 +1,0 @@
-import "std/string.olang";
-
-fn main() -> int {
-    var str1 = new String("Hello");
-    var str2 = new String("World");
-    str1.append(&str2);  // This should call the append method which is void
-    return 0;
-}

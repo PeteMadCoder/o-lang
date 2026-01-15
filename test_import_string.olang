@@ -1,6 +1,0 @@
-import "test_string_lib.olang";
-
-fn main() -> int {
-    var msg = new String("Hello, World!");
-    return 0;
-}

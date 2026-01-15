@@ -589,7 +589,6 @@ llvm::Value *ExpressionCodeGen::codegen(CallExprAST &E) {
     llvm::Function *CalleeF = codeGen.TheModule->getFunction(E.getCallee());
     
     if (!CalleeF) {
-        //fprintf(stderr, "DEBUG: Function not found in module, checking well-knowns\n");
         // Check if this is a well-known external C function that should be pre-declared
         if (E.getCallee() == "exit") {
             //fprintf(stderr, "DEBUG: Creating declaration for exit\n");
@@ -632,30 +631,23 @@ llvm::Value *ExpressionCodeGen::codegen(CallExprAST &E) {
     if (!CalleeF) {
         //fprintf(stderr, "DEBUG: Function still null after lookup attempts\n");
         // This stops the compiler from crashing when Builder->CreateCall(NULL) happens
-        codeGen.logError(("Linker Error: Function '" + E.getCallee() + "' is declared but not found during instantiation.").c_str());
-        return nullptr;
-    }
-    // ------------------------------
+        // Make sure the builder has a valid insertion point before creating the call
+        if (!codeGen.Builder->GetInsertBlock()) {
+            //fprintf(stderr, "DEBUG: No insertion point!\n");
+            codeGen.logError(("Call to function '" + E.getCallee() + "' cannot be generated: no insertion point available during instantiation.").c_str());
+            return nullptr;
+        }
+        // -------------------------------
+        // Additional null check for function
+        if (!CalleeF || !CalleeF->getFunctionType()) {
+            //fprintf(stderr, "DEBUG: Invalid function or function type\n");
+            codeGen.logError(("Invalid function or function type for: " + E.getCallee()).c_str());
+            return nullptr;
+        }
 
-    /*
-    fprintf(stderr, "DEBUG: CalleeF found: %p\n", (void*)CalleeF);
-    llvm::errs() << "DEBUG: CalleeF Dump: ";
-    CalleeF->print(llvm::errs());
-    llvm::errs() << "\n";
-    */
-
-    // 4. --- INSERTION POINT CHECK ---
-    // Make sure the builder has a valid insertion point before creating the call
-    if (!codeGen.Builder->GetInsertBlock()) {
-        //fprintf(stderr, "DEBUG: No insertion point!\n");
-        codeGen.logError(("Call to function '" + E.getCallee() + "' cannot be generated: no insertion point available during instantiation.").c_str());
-        return nullptr;
-    }
-    // -------------------------------
-    // Additional null check for function
-    if (!CalleeF || !CalleeF->getFunctionType()) {
-        //fprintf(stderr, "DEBUG: Invalid function or function type\n");
-        codeGen.logError(("Invalid function or function type for: " + E.getCallee()).c_str());
+        // If we reach here, we still don't have a valid function but we have a valid insertion point
+        // So we should return early to avoid calling CreateCall with a null function
+        codeGen.logError(("Unknown function referenced: " + E.getCallee()).c_str());
         return nullptr;
     }
 
@@ -1444,18 +1436,15 @@ llvm::Value *ExpressionCodeGen::codegen(UnresolvedNewExprAST &E) {
 }
 
 llvm::Value *ExpressionCodeGen::codegen(NewExprAST &E) {
-    fprintf(stderr, "DEBUG: Entering NewExprAST::codegen for class '%s'\n", E.getClassName().c_str());
     std::string LookupName = E.getClassName();
 
     // Handle Generics - only instantiate if the struct is actually generic
     if (!E.getGenericArgs().empty()) {
-        fprintf(stderr, "DEBUG: NewExprAST has generic args, checking if struct is generic\n");
         // Check if this is a generic struct first
         if (codeGen.GenericStructRegistry.count(E.getClassName()) > 0) {
             // Trigger instantiation (type and prototypes only)
             llvm::Type* instantiatedType = codeGen.utilCodeGen->instantiateStruct(E.getClassName(), E.getGenericArgs());
             LookupName = codeGen.utilCodeGen->mangleGenericName(E.getClassName(), E.getGenericArgs());
-            fprintf(stderr, "DEBUG: Instantiated generic struct, new name: %s\n", LookupName.c_str());
         } else {
             // If not a generic struct but has generic args, this is an error
             codeGen.logError(("Trying to instantiate non-generic struct with generic arguments: " + E.getClassName()).c_str());
@@ -1464,14 +1453,12 @@ llvm::Value *ExpressionCodeGen::codegen(NewExprAST &E) {
     }
 
     // Check if the class/struct exists
-    fprintf(stderr, "DEBUG: Looking for struct type '%s' in StructTypes map\n", LookupName.c_str());
     if (codeGen.StructTypes.find(LookupName) == codeGen.StructTypes.end()) {
         codeGen.logError(("Unknown class/struct name in 'new' expression: " + LookupName).c_str());
         return nullptr;
     }
 
     llvm::StructType *StructType = codeGen.StructTypes[LookupName];
-    fprintf(stderr, "DEBUG: Retrieved struct type: %p\n", StructType);
 
     // Check if StructType is valid
     if (!StructType) {
@@ -1482,26 +1469,20 @@ llvm::Value *ExpressionCodeGen::codegen(NewExprAST &E) {
     // 1. Heap Allocation (malloc)
     llvm::Function *MallocF = codeGen.TheModule->getFunction("malloc");
     if (!MallocF) {
-        fprintf(stderr, "DEBUG: Malloc function not found, creating declaration\n");
         std::vector<llvm::Type*> Args;
         Args.push_back(llvm::Type::getInt64Ty(*codeGen.TheContext)); // size_t
         llvm::FunctionType *FT = llvm::FunctionType::get(
             llvm::PointerType::get(llvm::Type::getInt8Ty(*codeGen.TheContext), 0), Args, false);
         MallocF = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "malloc", codeGen.TheModule);
-        fprintf(stderr, "DEBUG: Created malloc function: %p\n", MallocF);
-    } else {
-        fprintf(stderr, "DEBUG: Found existing malloc function: %p\n", MallocF);
     }
 
     // Calculate size
     size_t size = 0;
     if (TypeRegistry::getInstance().hasStruct(LookupName)) {
         size = TypeRegistry::getInstance().getStruct(LookupName).totalSize;
-        fprintf(stderr, "DEBUG: Calculated struct size: %zu\n", size);
     }
     if (size == 0) {
         size = 1; // Minimum allocation
-        fprintf(stderr, "DEBUG: Using minimum allocation size: %zu\n", size);
     }
 
     llvm::Value *SizeVal = llvm::ConstantInt::get(llvm::Type::getInt64Ty(*codeGen.TheContext), size);
@@ -1536,30 +1517,25 @@ llvm::Value *ExpressionCodeGen::codegen(NewExprAST &E) {
     }
 
     llvm::Function *Constructor = codeGen.TheModule->getFunction(MangledName);
-    fprintf(stderr, "DEBUG: Looking for constructor function: %s, found: %p\n", MangledName.c_str(), Constructor);
 
     // Fallback to base name if mangled not found (backward compatibility or void args)
     if (!Constructor) {
         Constructor = codeGen.TheModule->getFunction(ConstructorName);
-        fprintf(stderr, "DEBUG: Fallback to base name: %s, found: %p\n", ConstructorName.c_str(), Constructor);
     }
 
     // Try to look up in global registry if still not found
     if (!Constructor) {
         Constructor = codeGen.utilCodeGen->getFunctionFromPrototype(MangledName);
-        fprintf(stderr, "DEBUG: Looking in global registry for mangled: %s, found: %p\n", MangledName.c_str(), Constructor);
     }
 
     // Also try base name in global registry
     if (!Constructor) {
         Constructor = codeGen.utilCodeGen->getFunctionFromPrototype(ConstructorName);
-        fprintf(stderr, "DEBUG: Looking in global registry for base: %s, found: %p\n", ConstructorName.c_str(), Constructor);
     }
 
     // CRITICAL FIX: If constructor is still not found, trigger instantiation request
     // This is especially important when called from within struct methods during instantiation
     if (!Constructor) {
-        fprintf(stderr, "DEBUG: Constructor not found, checking for generic instantiation\n");
         // If this is a generic struct that should have been instantiated but wasn't,
         // trigger instantiation (but do not process queue recursively)
         if (!E.getGenericArgs().empty() && codeGen.GenericStructRegistry.count(E.getClassName()) > 0) {
@@ -1576,7 +1552,6 @@ llvm::Value *ExpressionCodeGen::codegen(NewExprAST &E) {
             if (!Constructor) {
                  Constructor = codeGen.TheModule->getFunction(ConstructorName);
             }
-            fprintf(stderr, "DEBUG: After instantiation, constructor found: %p\n", Constructor);
         } else {
             // For non-generic structs, try to trigger any pending instantiations that might define this constructor
             codeGen.processDeferredInstantiations();
@@ -1585,7 +1560,6 @@ llvm::Value *ExpressionCodeGen::codegen(NewExprAST &E) {
             if (!Constructor) {
                 Constructor = codeGen.TheModule->getFunction(ConstructorName);
             }
-            fprintf(stderr, "DEBUG: After processing instantiations, constructor found: %p\n", Constructor);
         }
     }
 
@@ -1645,8 +1619,6 @@ llvm::Value *ExpressionCodeGen::codegen(NewExprAST &E) {
             return nullptr;
         }
 
-        fprintf(stderr, "DEBUG: About to call constructor - function: %p, num args: %zu\n", Constructor, CallArgs.size());
-
         // Perform detailed validation before the call
         if (!Constructor->getFunctionType()) {
             fprintf(stderr, "ERROR: Constructor function has no type\n");
@@ -1670,8 +1642,6 @@ llvm::Value *ExpressionCodeGen::codegen(NewExprAST &E) {
             llvm::Type *expectedType = Constructor->getFunctionType()->getParamType(i);
             llvm::Type *actualType = CallArgs[i]->getType();
 
-            fprintf(stderr, "DEBUG: Validating arg %zu - expected: %p, actual: %p\n", i, expectedType, actualType);
-
             // Basic type compatibility check - for now just make sure both are valid
             if (!expectedType || !actualType) {
                 fprintf(stderr, "ERROR: Invalid types for arg %zu - expected: %p, actual: %p\n", i, expectedType, actualType);
@@ -1679,11 +1649,8 @@ llvm::Value *ExpressionCodeGen::codegen(NewExprAST &E) {
             }
         }
 
-        fprintf(stderr, "DEBUG: All validations passed, about to make constructor call\n");
-
         // Call constructor
         llvm::Value *callResult = codeGen.Builder->CreateCall(Constructor, CallArgs);
-        fprintf(stderr, "DEBUG: Constructor call completed successfully, result: %p\n", callResult);
     } else {
         // Only error if we expected a constructor and didn't find one.
         // Default constructor might be implicit (do nothing).
@@ -2157,39 +2124,28 @@ llvm::Value *ExpressionCodeGen::codegen(MemberAccessAST &E) {
 }
 
 llvm::Value *ExpressionCodeGen::codegenAddress(MemberAccessAST &E) {
-    fprintf(stderr, "DEBUG: Entering MemberAccessAST::codegenAddress for field '%s'\n", E.getFieldName().c_str());
-
     // 1. Resolve Object Address/Pointer
     llvm::Value *ObjPtr = nullptr;
 
-    fprintf(stderr, "DEBUG: About to get object for field '%s'\n", E.getFieldName().c_str());
     OType objOType = E.getObject()->getOType();
-    fprintf(stderr, "DEBUG: Object OType - base: %d, pointerDepth: %d, structName: %s\n",
-            static_cast<int>(objOType.base), objOType.pointerDepth, objOType.structName.c_str());
 
     // If Object is a pointer (like 'this'), we need its value (the address it points to)
     if (objOType.isPointer()) {
-        fprintf(stderr, "DEBUG: Object is a pointer, calling codegen\n");
         ObjPtr = codegen(*E.getObject());
     } else {
-        fprintf(stderr, "DEBUG: Object is not a pointer, calling codegenAddress\n");
         // If Object is a struct value, we need its address
         ObjPtr = codegenAddress(*E.getObject());
     }
 
     if (!ObjPtr) {
-        fprintf(stderr, "DEBUG: ObjPtr is null, returning nullptr\n");
         return nullptr;
     }
-
-    fprintf(stderr, "DEBUG: ObjPtr is valid: %p\n", ObjPtr);
 
     // 2. Resolve Field Info
     OType ObjType = E.getObject()->getOType();
 
     // Check for Arrays/Slices - they don't have addressable named fields (except via properties handled in codegen)
     if (ObjType.isArray()) {
-        fprintf(stderr, "DEBUG: Object is array/slice, returning nullptr from codegenAddress\n");
         return nullptr;
     }
 
@@ -2198,39 +2154,32 @@ llvm::Value *ExpressionCodeGen::codegenAddress(MemberAccessAST &E) {
     if (ObjType.isPointer()) {
         OType pointeeType = ObjType.getPointeeType();
         StructName = pointeeType.structName;
-        fprintf(stderr, "DEBUG: Object is pointer, pointee structName: %s\n", pointeeType.structName.c_str());
 
         // Handle Generics for pointer types
         if (!pointeeType.genericArgs.empty()) {
             StructName = codeGen.utilCodeGen->mangleGenericName(pointeeType.structName, pointeeType.genericArgs);
-            fprintf(stderr, "DEBUG: Mangled name for pointer type: %s\n", StructName.c_str());
         }
     } else {
         StructName = ObjType.structName;
-        fprintf(stderr, "DEBUG: Object is value, structName: %s\n", ObjType.structName.c_str());
 
         // Handle Generics for value types
         if (!ObjType.genericArgs.empty()) {
             StructName = codeGen.utilCodeGen->mangleGenericName(ObjType.structName, ObjType.genericArgs);
-            fprintf(stderr, "DEBUG: Mangled name for value type: %s\n", StructName.c_str());
         }
     }
 
     // Ensure the struct is properly instantiated if it's generic
     if (!ObjType.genericArgs.empty()) {
-        fprintf(stderr, "DEBUG: Instantiating generic struct: %s\n", ObjType.structName.c_str());
         codeGen.utilCodeGen->instantiateStruct(ObjType.structName, ObjType.genericArgs);
         StructName = codeGen.utilCodeGen->mangleGenericName(ObjType.structName, ObjType.genericArgs);
     } else if (ObjType.isPointer()) {
         OType pointeeType = ObjType.getPointeeType();
         if (!pointeeType.genericArgs.empty()) {
-            fprintf(stderr, "DEBUG: Instantiating generic pointer struct: %s\n", pointeeType.structName.c_str());
             codeGen.utilCodeGen->instantiateStruct(pointeeType.structName, pointeeType.genericArgs);
             StructName = codeGen.utilCodeGen->mangleGenericName(pointeeType.structName, pointeeType.genericArgs);
         }
     }
 
-    fprintf(stderr, "DEBUG: Looking for struct '%s' in registry\n", StructName.c_str());
     if (!TypeRegistry::getInstance().hasStruct(StructName)) {
         fprintf(stderr, "DEBUG: Struct '%s' not found in registry\n", StructName.c_str());
         codeGen.logError(("Struct not found in registry: " + StructName).c_str());
@@ -2238,20 +2187,16 @@ llvm::Value *ExpressionCodeGen::codegenAddress(MemberAccessAST &E) {
     }
 
     const StructInfo& info = TypeRegistry::getInstance().getStruct(StructName);
-    fprintf(stderr, "DEBUG: Found struct '%s' with %zu fields\n", StructName.c_str(), info.fields.size());
 
     int FieldIndex = -1;
     for (size_t i = 0; i < info.fields.size(); ++i) {
-        fprintf(stderr, "DEBUG: Checking field %zu: '%s' vs '%s'\n", i, info.fields[i].name.c_str(), E.getFieldName().c_str());
         if (info.fields[i].name == E.getFieldName()) {
             FieldIndex = i;
-            fprintf(stderr, "DEBUG: Found field '%s' at index %d\n", E.getFieldName().c_str(), FieldIndex);
             break;
         }
     }
 
     if (FieldIndex == -1) {
-        fprintf(stderr, "DEBUG: Field '%s' not found in struct '%s'\n", E.getFieldName().c_str(), StructName.c_str());
         codeGen.logError(("Field '" + E.getFieldName() + "' not found in struct '" + StructName + "'").c_str());
         return nullptr;
     }
@@ -2259,29 +2204,18 @@ llvm::Value *ExpressionCodeGen::codegenAddress(MemberAccessAST &E) {
     // 3. Generate GEP
     llvm::Value *Zero = llvm::ConstantInt::get(llvm::Type::getInt32Ty(*codeGen.TheContext), 0);
     llvm::Value *Idx = llvm::ConstantInt::get(llvm::Type::getInt32Ty(*codeGen.TheContext), FieldIndex);
-    fprintf(stderr, "DEBUG: Creating GEP with indices [0, %d]\n", FieldIndex);
 
     // Safety check: ensure the struct type exists in StructTypes
-    fprintf(stderr, "DEBUG: Looking for struct type '%s' in StructTypes map\n", StructName.c_str());
     if (codeGen.StructTypes.find(StructName) == codeGen.StructTypes.end()) {
-        fprintf(stderr, "DEBUG: Struct type '%s' not found in StructTypes map\n", StructName.c_str());
         codeGen.logError(("Struct type not found in StructTypes map: " + StructName).c_str());
         return nullptr;
     }
 
     llvm::Type* structType = codeGen.StructTypes[StructName];
-    fprintf(stderr, "DEBUG: Retrieved structType: %p, isStructTy: %s\n", structType, structType && structType->isStructTy() ? "true" : "false");
 
     if (!structType || !structType->isStructTy()) {
-        fprintf(stderr, "DEBUG: Invalid struct type for: %s\n", StructName.c_str());
         codeGen.logError(("Invalid struct type for: " + StructName).c_str());
         return nullptr;
-    }
-
-    fprintf(stderr, "DEBUG: About to call CreateInBoundsGEP - structType: %p, ObjPtr: %p\n", structType, ObjPtr);
-    fprintf(stderr, "DEBUG: ObjPtr type info\n");
-    if (structType->isStructTy()) {
-        fprintf(stderr, "DEBUG: structType has %d elements\n", structType->getStructNumElements());
     }
 
     llvm::Value *result = codeGen.Builder->CreateInBoundsGEP(
@@ -2290,7 +2224,6 @@ llvm::Value *ExpressionCodeGen::codegenAddress(MemberAccessAST &E) {
         {Zero, Idx},
         "fieldaddr"
     );
-    fprintf(stderr, "DEBUG: CreateInBoundsGEP succeeded, result: %p\n", result);
     return result;
 }
 

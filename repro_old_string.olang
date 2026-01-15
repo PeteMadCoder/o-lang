@@ -1,6 +1,0 @@
-include "stdlib/std/old_failing_string.olang"
-
-fn main() {
-    var s = new String("Hello");
-    printf(s.c_str());
-}

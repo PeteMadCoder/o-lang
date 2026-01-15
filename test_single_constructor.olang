@@ -1,7 +1,0 @@
-import "std/string.olang";
-
-fn main() -> int {
-    // Only test one constructor to see if the issue is multiple constructors
-    var msg = new String("Hello");
-    return 0;
-}

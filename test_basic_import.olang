@@ -1,6 +1,0 @@
-import "std/io.olang";
-
-fn main() -> int {
-    print_string("Basic import test");
-    return 0;
-}
