@@ -1025,15 +1025,18 @@ class PrototypeAST {
     std::string Name;
     std::vector<std::pair<std::string, OType>> Args; // Name + Type
     OType ReturnType;
+    bool IsStatic; // NEW FIELD
 public:
     PrototypeAST(const std::string &Name, 
                  std::vector<std::pair<std::string, OType>> Args, 
-                 OType RetType)
-        : Name(Name), Args(std::move(Args)), ReturnType(RetType) {}
+                 OType RetType,
+                 bool IsStatic = false) // Update Constructor
+        : Name(Name), Args(std::move(Args)), ReturnType(RetType), IsStatic(IsStatic) {}
 
     llvm::Function *codegen();
     const std::string &getName() const { return Name; }
     void setName(const std::string &NewName) { Name = NewName; }
+    bool isStatic() const { return IsStatic; } // NEW Getter
     void injectThisParameter(const std::string &StructName);
     const std::vector<std::pair<std::string, OType>>& getArgs() const { return Args; }
     OType getReturnType() const { return ReturnType; }
@@ -1041,7 +1044,7 @@ public:
     std::unique_ptr<PrototypeAST> clone(const std::map<std::string, OType>& typeMap = {}) const {
         std::vector<std::pair<std::string, OType>> NewArgs;
         for(const auto& arg : Args) NewArgs.push_back(std::make_pair(arg.first, arg.second.substitute(typeMap)));
-        return std::make_unique<PrototypeAST>(Name, NewArgs, ReturnType.substitute(typeMap));
+        return std::make_unique<PrototypeAST>(Name, NewArgs, ReturnType.substitute(typeMap), IsStatic);
     }
 };
 

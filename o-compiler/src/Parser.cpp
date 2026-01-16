@@ -391,6 +391,44 @@ std::unique_ptr<ExprAST> Parser::ParseIdentifierExpr() {
     std::string IdName = curTok.text;
     getNextToken(); // eat identifier
 
+    // Check for Static Method Call: Struct.Method(...)
+    // We check if the identifier is a known struct type and followed by '.'
+    // This allows distinguishing "Var.Method()" (instance) from "Type.Method()" (static)
+    if (curTok.type == TokenType::Dot && TypeRegistry::getInstance().hasStruct(IdName)) {
+         getNextToken(); // eat '.'
+         
+         if (curTok.type != TokenType::Identifier) 
+             return LogError("Expected method name after '.'");
+             
+         std::string MethodName = curTok.text;
+         getNextToken(); // eat method name
+         
+         // Parse Args
+         if (curTok.type != TokenType::LParen) 
+             return LogError("Expected '(' for static method call");
+         getNextToken(); // eat '('
+         
+         std::vector<std::unique_ptr<ExprAST>> Args;
+         if (curTok.type != TokenType::RParen) {
+             while (true) {
+                 if (auto Arg = ParseExpression())
+                     Args.push_back(std::move(Arg));
+                 else
+                     return nullptr;
+
+                 if (curTok.type == TokenType::RParen) break;
+
+                 if (curTok.type != TokenType::Comma)
+                     return LogError("Expected ')' or ',' in argument list");
+                 getNextToken();
+             }
+         }
+         getNextToken(); // eat ')'
+         
+         std::string MangledName = IdName + "_" + MethodName;
+         return std::make_unique<CallExprAST>(MangledName, std::move(Args));
+    }
+
     // Simple variable ref
     if (curTok.type != TokenType::LParen)
         return std::make_unique<VariableExprAST>(IdName);
@@ -895,7 +933,7 @@ std::unique_ptr<ExprAST> Parser::ParseBlock() {
     return std::make_unique<BlockExprAST>(std::move(Stmts));
 }
 
-std::unique_ptr<PrototypeAST> Parser::ParsePrototype() {
+std::unique_ptr<PrototypeAST> Parser::ParsePrototype(bool isStatic) {
     //fprintf(stderr, "DEBUG: ParsePrototype Tok: %d Text: %s\n", (int)curTok.type, curTok.text.c_str());
     if (curTok.type != TokenType::Fn) return LogErrorP("Expected 'fn'");
     getNextToken(); // eat 'fn'
@@ -938,11 +976,11 @@ std::unique_ptr<PrototypeAST> Parser::ParsePrototype() {
         RetType = ParseType(); // Parse "int" or "float"
     }
 
-    return std::make_unique<PrototypeAST>(FnName, std::move(Args), RetType);
+    return std::make_unique<PrototypeAST>(FnName, std::move(Args), RetType, isStatic);
 }
 
-std::unique_ptr<FunctionAST> Parser::ParseDefinition() {
-    auto Proto = ParsePrototype();
+std::unique_ptr<FunctionAST> Parser::ParseDefinition(bool isStatic) {
+    auto Proto = ParsePrototype(isStatic);
     if (!Proto) return nullptr;
 
     // Check if this is an extern declaration (semicolon after prototype)
@@ -995,17 +1033,28 @@ std::unique_ptr<StructDeclAST> Parser::ParseStruct() {
     std::vector<std::unique_ptr<ConstructorAST>> Constructors;
     
     while (curTok.type != TokenType::RBrace && curTok.type != TokenType::EoF) {
+        bool isStatic = false;
+        if (curTok.type == TokenType::Static) {
+            isStatic = true;
+            getNextToken(); // eat 'static'
+        }
+
         if (curTok.type == TokenType::Fn) {
             // Parse method
-            auto method = ParseDefinition();
+            auto method = ParseDefinition(isStatic);
             if (!method) {
                 LogError("Failed to parse struct method");
                 return nullptr;
             }
             Methods.push_back(std::move(method));
         } else if (curTok.type == TokenType::New) {
+            if (isStatic) {
+                LogError("Constructors cannot be static"); // Safety check
+                return nullptr;
+            }
             // Parse constructor
             std::cerr << "Parsing constructor for " << StructName << "\n";
+
             auto constructor = ParseConstructor();
             if (!constructor) {
                 LogError("Failed to parse struct constructor");

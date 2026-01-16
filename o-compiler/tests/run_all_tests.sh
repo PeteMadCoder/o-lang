@@ -287,6 +287,50 @@ fn main() -> int {
 }
 EOF
 
+cat > "$TEMP_DIR/structs/static_methods.olang" << 'EOF'
+struct Math {
+    static fn add(a: int, b: int) -> int {
+        return a + b;
+    }
+    
+    static fn sub(a: int, b: int) -> int {
+        return a - b;
+    }
+}
+
+struct Calculator {
+    val: int;
+    
+    new(v: int) {
+        this.val = v;
+    }
+
+    static fn multiply(a: int, b: int) -> int {
+        return a * b;
+    }
+    
+    fn add_to_val(x: int) -> int {
+        return this.val + x;
+    }
+}
+
+fn main() -> int {
+    var sum = Math.add(10, 20);      // 30
+    var diff = Math.sub(30, 5);      // 25
+    var prod = Calculator.multiply(6, 7); // 42
+    
+    var calc = new Calculator(100);
+    var instance_res = calc.add_to_val(50); // 150
+    
+    if (sum != 30) { return 1; }
+    if (diff != 25) { return 2; }
+    if (prod != 42) { return 3; }
+    if (instance_res != 150) { return 4; }
+    
+    return 0;
+}
+EOF
+
 # Create memory tests
 cat > "$TEMP_DIR/memory/array_allocation.olang" << 'EOF'
 fn main() -> int {
@@ -547,6 +591,7 @@ echo ""
 echo -e "${YELLOW}Struct Tests:${NC}"
 run_should_pass_test "struct_simple" "$TEMP_DIR/structs/simple_struct.olang" "Simple struct with constructor"
 run_should_pass_test "struct_nested" "$TEMP_DIR/structs/nested_structs.olang" "Nested structs"
+run_should_pass_test "struct_static" "$TEMP_DIR/structs/static_methods.olang" "Static methods in structs"
 
 echo ""
 echo -e "${YELLOW}Memory Tests:${NC}"

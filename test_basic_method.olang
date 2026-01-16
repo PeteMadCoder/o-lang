@@ -1,0 +1,16 @@
+struct Point {
+    x: int;
+    y: int;
+    
+    fn getX() -> int {
+        return this.x;
+    }
+}
+
+fn main() {
+    var p: Point;
+    p.x = 5;
+    p.y = 10;
+    var x_val = p.getX();
+    return;
+}

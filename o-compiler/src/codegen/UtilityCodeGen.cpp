@@ -474,7 +474,9 @@ llvm::Type* UtilityCodeGen::instantiateStruct(const std::string& genericName, co
         clonedProto->setName(mangledMethodName);
 
         // Inject 'this' parameter as first argument with the instantiated struct type
-        clonedProto->injectThisParameter(mangledName);
+        if (!clonedProto->isStatic()) {
+            clonedProto->injectThisParameter(mangledName);
+        }
 
         // Generate the function declaration (prototype only)
         llvm::Function *TheFunction = codeGen.funcCodeGen->codegen(*clonedProto);
@@ -489,7 +491,7 @@ llvm::Type* UtilityCodeGen::instantiateStruct(const std::string& genericName, co
 
         // Also inject 'this' parameter into the original method prototype in the AST
         // This is needed for deferred processing
-        if (method && method->getPrototype()) {
+        if (method && method->getPrototype() && !method->getPrototype()->isStatic()) {
             method->getPrototype()->injectThisParameter(mangledName);
         }
 
@@ -951,7 +953,9 @@ llvm::Type* UtilityCodeGen::instantiateStructSkeleton(const std::string& generic
         clonedProto->setName(mangledMethodName);
 
         // Inject 'this' parameter as first argument with the instantiated struct type
-        clonedProto->injectThisParameter(mangledName);
+        if (!clonedProto->isStatic()) {
+            clonedProto->injectThisParameter(mangledName);
+        }
 
         // Generate the function declaration (prototype only)
         llvm::Function *TheFunction = codeGen.funcCodeGen->codegen(*clonedProto);
@@ -966,7 +970,7 @@ llvm::Type* UtilityCodeGen::instantiateStructSkeleton(const std::string& generic
 
         // Also inject 'this' parameter into the original method prototype in the AST
         // This is needed for deferred processing
-        if (method && method->getPrototype()) {
+        if (method && method->getPrototype() && !method->getPrototype()->isStatic()) {
             method->getPrototype()->injectThisParameter(mangledName);
         }
 

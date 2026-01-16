@@ -11,7 +11,7 @@ enum class TokenType {
 
     // Keywords
     Fn, Var, Let, Mut, Return, If, Else, While, For, Struct, Class, Import, Module,
-    Open, Virtual, Override, New, Shared, Unsafe, Match, Delete, As,
+    Open, Virtual, Override, New, Shared, Unsafe, Match, Delete, As, Static,
     
     // Primitive Types
     TypeInt, TypeFloat, TypeBool, TypeVoid, TypeChar, TypeByte,

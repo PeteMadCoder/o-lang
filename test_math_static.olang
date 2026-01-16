@@ -1,0 +1,10 @@
+struct Math {
+    static fn add(x: int, y: int) -> int {
+        return x + y;
+    }
+}
+
+fn main() {
+    var result = Math.add(5, 3);
+    return;
+}

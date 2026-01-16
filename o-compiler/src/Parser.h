@@ -128,10 +128,10 @@ public:
 
     // prototype
     //   ::= fn Name(Args) -> Type
-    std::unique_ptr<PrototypeAST> ParsePrototype();
+    std::unique_ptr<PrototypeAST> ParsePrototype(bool isStatic = false);
 
     // definition ::= prototype expression
-    std::unique_ptr<FunctionAST> ParseDefinition();
+    std::unique_ptr<FunctionAST> ParseDefinition(bool isStatic = false);
     
     // struct ::= 'struct' Name '{' field* '}'
     std::unique_ptr<StructDeclAST> ParseStruct();

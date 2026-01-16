@@ -113,8 +113,10 @@ void TypeResolver::resolveMethods(StructDeclAST &S) {
         // Update the method's prototype name
         method->getPrototype()->setName(mangledName);
 
-        // Inject 'this' parameter as first argument
-        method->getPrototype()->injectThisParameter(S.getName());
+        // Inject 'this' parameter as first argument (only for instance methods)
+        if (!method->getPrototype()->isStatic()) {
+            method->getPrototype()->injectThisParameter(S.getName());
+        }
 
         // Register the prototype in the global registry for external functions
         // This is critical for deferred method resolution
@@ -164,7 +166,10 @@ void TypeResolver::resolveMethods(ClassDeclAST &C) {
         std::string originalName = method->getPrototype()->getName();
         std::string mangledName = C.getName() + "_" + originalName;
         method->getPrototype()->setName(mangledName);
-        method->getPrototype()->injectThisParameter(C.getName());
+        
+        if (!method->getPrototype()->isStatic()) {
+            method->getPrototype()->injectThisParameter(C.getName());
+        }
         
         // Register the prototype in the global registry
         if (codeGen.GlobalFunctionProtos.find(mangledName) == codeGen.GlobalFunctionProtos.end()) {

@@ -1,0 +1,14 @@
+O Language Compiler Comprehensive Test Suite
+Run Date: Thu Jan 15 07:50:23 PM WET 2026
+========================================
+RUN  basic_helloworld: Simple main function
+PASS basic_helloworld: Expected 'success', got 'success'
+RUN  basic_vars: Variable declarations
+PASS basic_vars: Expected 'success', got 'success'
+RUN  basic_types: Type annotations
+PASS basic_types: Expected 'success', got 'success'
+RUN  basic_arith: Arithmetic operations
+PASS basic_arith: Expected 'success', got 'success'
+RUN  basic_bool: Boolean operations
+PASS basic_bool: Expected 'success', got 'success'
+RUN  func_simple: Simple function

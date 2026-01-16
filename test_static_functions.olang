@@ -1,0 +1,27 @@
+struct Result<T> {
+    T value;
+    bool isOk;
+    
+    static fn ok(val: T) -> Result<T> {
+        var r: Result<T>;
+        r.value = val;
+        r.isOk = true;
+        return r;
+    }
+    
+    static fn err(msg: int) -> Result<T> {
+        var r: Result<T>;
+        r.isOk = false;
+        return r;
+    }
+    
+    fn getValue() -> T {
+        return this.value;
+    }
+}
+
+fn main() {
+    var res = Result<int>.ok(42);
+    var val = res.getValue();
+    return;
+}
