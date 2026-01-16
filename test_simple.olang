@@ -1,4 +1,0 @@
-fn main() {
-    var x: int = 5;
-    return;
-}
