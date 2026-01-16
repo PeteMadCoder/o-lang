@@ -4,24 +4,45 @@ struct Option<T> {
     has_value: bool;
     value: T;
 
-    fn some(val: T) -> Option<T> {
+    // Default constructor
+    new() {
+        this.has_value = false;
+    }
+
+    static fn some(val: T) -> *Option<T> {
         var o = new Option<T>();
         o.has_value = true;
         o.value = val;
         return o;
     }
 
-    fn none() -> Option<T> {
+    static fn none() -> *Option<T> {
         var o = new Option<T>();
         o.has_value = false;
         return o;
     }
 
-    fn is_some() -> bool {return this.has_value;}
+    fn is_some() -> bool {
+        return this.has_value;
+    }
+    
+    fn is_none() -> bool {
+        return !this.has_value;
+    }
 
     fn unwrap() -> T {
-        if (!this.has_value) unsafe {
-            exit(1);
+        if (!this.has_value) {
+            // TODO: Print error message?
+            unsafe {
+                exit(1);
+            }
+        }
+        return this.value;
+    }
+    
+    fn unwrap_or(default_val: T) -> T {
+        if (!this.has_value) {
+            return default_val;
         }
         return this.value;
     }

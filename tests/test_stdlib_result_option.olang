@@ -1,0 +1,70 @@
+import "std/result.olang";
+import "std/option.olang";
+import "std/io.olang";
+import "std/string.olang";
+
+fn test_result() -> int {
+    // Test Result.ok
+    var ok_res = Result<int>.ok(42);
+    if (ok_res.is_err()) {
+        println("Result.ok failed: reports is_err");
+        return 1;
+    }
+    if (ok_res.unwrap() != 42) {
+        println("Result.ok failed: wrong value");
+        return 1;
+    }
+
+    // Test Result.err
+    var err_msg = new String("Something went wrong");
+    var err_res = Result<int>.err(err_msg);
+    if (err_res.is_ok()) {
+        println("Result.err failed: reports is_ok");
+        return 1;
+    }
+    if (err_res.unwrap_or(100) != 100) {
+        println("Result.err failed: unwrap_or didn't return default");
+        return 1;
+    }
+    
+    return 0;
+}
+
+fn test_option() -> int {
+    // Test Option.some
+    var some_opt = Option<int>.some(10);
+    if (some_opt.is_none()) {
+        println("Option.some failed: reports is_none");
+        return 1;
+    }
+    if (some_opt.unwrap() != 10) {
+        println("Option.some failed: wrong value");
+        return 1;
+    }
+    
+    // Test Option.none
+    var none_opt = Option<int>.none();
+    if (none_opt.is_some()) {
+        println("Option.none failed: reports is_some");
+        return 1;
+    }
+    if (none_opt.unwrap_or(55) != 55) {
+        println("Option.none failed: unwrap_or didn't return default");
+        return 1;
+    }
+    
+    return 0;
+}
+
+fn main() -> int {
+    if (test_result() != 0) {
+        return 1;
+    }
+    
+    if (test_option() != 0) {
+        return 1;
+    }
+    
+    println("All Result/Option tests passed!");
+    return 0;
+}

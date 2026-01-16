@@ -2,10 +2,13 @@
 #include "Parser.h"
 #include "Lexer.h"
 #include "SymbolTable.h"
+#include "codegen/CodeGenerator.h" // Include CodeGenerator
 #include <iostream>
 #include <fstream>
 #include <sstream>
 #include <filesystem>
+
+extern std::unique_ptr<CodeGenerator> GlobalCodeGen; // Declaration
 
 // Define destructor here to resolve the unique_ptr<SymbolTable>
 CompilerDriver::~CompilerDriver() = default;
@@ -122,6 +125,11 @@ void CompilerDriver::processFileInternal(const std::string& filename, bool forSy
     std::stringstream buffer;
     buffer << file.rdbuf();
     std::string source_code = buffer.str();
+
+    // Ensure we are in Parsing phase
+    if (GlobalCodeGen) {
+        GlobalCodeGen->CurrentPhase = CompilerPhase::Parsing;
+    }
 
     // 4. Parse - pass the forSymbolCollection flag to the parser
     Lexer lexer(source_code);

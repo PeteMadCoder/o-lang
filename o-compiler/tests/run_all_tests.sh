@@ -456,6 +456,80 @@ fn main() -> int {
 }
 EOF
 
+# Create Result/Option test
+cat > "$TEMP_DIR/stdlib/result_option_test.olang" << 'EOF'
+import "std/result.olang";
+import "std/option.olang";
+import "std/io.olang";
+import "std/string.olang";
+
+fn test_result() -> int {
+    // Test Result.ok
+    var ok_res = Result<int>.ok(42);
+    if (ok_res.is_err()) {
+        println("Result.ok failed: reports is_err");
+        return 1;
+    }
+    if (ok_res.unwrap() != 42) {
+        println("Result.ok failed: wrong value");
+        return 1;
+    }
+
+    // Test Result.err
+    var err_msg = new String("Something went wrong");
+    var err_res = Result<int>.err(err_msg); // Ptr to String
+    if (err_res.is_ok()) {
+        println("Result.err failed: reports is_ok");
+        return 1;
+    }
+    if (err_res.unwrap_or(100) != 100) {
+        println("Result.err failed: unwrap_or didn't return default");
+        return 1;
+    }
+    
+    return 0;
+}
+
+fn test_option() -> int {
+    // Test Option.some
+    var some_opt = Option<int>.some(10);
+    if (some_opt.is_none()) {
+        println("Option.some failed: reports is_none");
+        return 1;
+    }
+    if (some_opt.unwrap() != 10) {
+        println("Option.some failed: wrong value");
+        return 1;
+    }
+    
+    // Test Option.none
+    var none_opt = Option<int>.none();
+    if (none_opt.is_some()) {
+        println("Option.none failed: reports is_some");
+        return 1;
+    }
+    if (none_opt.unwrap_or(55) != 55) {
+        println("Option.none failed: unwrap_or didn't return default");
+        return 1;
+    }
+    
+    return 0;
+}
+
+fn main() -> int {
+    if (test_result() != 0) {
+        return 1;
+    }
+    
+    if (test_option() != 0) {
+        return 1;
+    }
+    
+    println("All Result/Option tests passed!");
+    return 0;
+}
+EOF
+
 # Create string library test
 cat > "$TEMP_DIR/stdlib/string_test.olang" << 'EOF'
 import "std/string.olang";
@@ -611,6 +685,7 @@ run_should_pass_test "op_overload" "$TEMP_DIR/operators/operator_overload.olang"
 echo ""
 echo -e "${YELLOW}Standard Library Tests:${NC}"
 run_should_pass_test "stdlib_import" "$TEMP_DIR/stdlib/import_test.olang" "Import statement"
+run_should_pass_test "stdlib_result_option" "$TEMP_DIR/stdlib/result_option_test.olang" "Result and Option types with static methods"
 # This test is expected to fail due to the known String module issue
 run_should_pass_test "stdlib_string" "$TEMP_DIR/stdlib/string_test.olang" "failure" "String library implementation (known to fail)"
 run_should_pass_test "stdlib_vector" "$TEMP_DIR/stdlib/vector_test.olang" "Vector library implementation"

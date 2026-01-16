@@ -2,6 +2,7 @@
 #include "CompilerDriver.h"
 #include "AST.h"  // Include AST.h to access the global registry functions
 #include "codegen/CodeGenerator.h"  // Include to access GlobalCodeGen
+#include "codegen/UtilityCodeGen.h" // Include to access instantiateStruct
 #include "SymbolTable.h"
 #include <iostream>
 #include <cassert>
@@ -390,6 +391,29 @@ std::unique_ptr<ExprAST> Parser::ParseParenExpr() {
 std::unique_ptr<ExprAST> Parser::ParseIdentifierExpr() {
     std::string IdName = curTok.text;
     getNextToken(); // eat identifier
+
+    // DEBUG
+    // if (IdName == "Result") std::cerr << "DEBUG: Parsing Result. Next tok: " << (int)curTok.type << " Registry: " << (GlobalCodeGen ? GlobalCodeGen->GenericStructRegistry.count(IdName) : 0) << "\n";
+
+    // Handle Generic Static Call: Result<int>.ok()
+    if (GlobalCodeGen && GlobalCodeGen->GenericStructRegistry.count(IdName) && curTok.type == TokenType::Less) {
+         getNextToken(); // eat '<'
+         std::vector<OType> GenArgs;
+         while (curTok.type != TokenType::Greater && curTok.type != TokenType::EoF) {
+             GenArgs.push_back(ParseType());
+             if (curTok.type == TokenType::Comma) getNextToken();
+         }
+         
+         if (curTok.type != TokenType::Greater) 
+             return LogError("Expected '>' after generic arguments");
+         getNextToken(); // eat '>'
+         
+         // Instantiate the generic struct
+         GlobalCodeGen->utilCodeGen->instantiateStruct(IdName, GenArgs);
+         
+         // Update IdName to the mangled name (e.g., Result_int)
+         IdName = GlobalCodeGen->utilCodeGen->mangleGenericName(IdName, GenArgs);
+    }
 
     // Check for Static Method Call: Struct.Method(...)
     // We check if the identifier is a known struct type and followed by '.'

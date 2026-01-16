@@ -15,10 +15,11 @@ llvm::Function *UtilityCodeGen::getFreeFunc() {
 
 void UtilityCodeGen::enforceInstantiationPhase(const std::string& context) {
     if (codeGen.CurrentPhase != CompilerPhase::InstantiatingGenerics &&
-        codeGen.CurrentPhase != CompilerPhase::Parsing) {
-        // Allow instantiation during parsing phase (for semantic discovery) and instantiation phase
-        // but not during code generation phase
-        std::string errorMsg = "Generic instantiation attempted outside of instantiation/parsing phase";
+        codeGen.CurrentPhase != CompilerPhase::Parsing &&
+        codeGen.CurrentPhase != CompilerPhase::GeneratingBodies) {
+        // Allow instantiation during parsing phase, instantiation phase, AND generating bodies phase
+        // (nested instantiations are common)
+        std::string errorMsg = "Generic instantiation attempted outside of valid phases";
         if (!context.empty()) {
             errorMsg += " (" + context + ")";
         }

@@ -6,26 +6,39 @@ struct Result<T> {
     value: T;
     err_msg: String;
 
-    // Factory: Success
-    static fn ok(val: T) -> Result<T> {
+    // Default constructor required for instantiation
+    new() {
+        this.is_error = false;
+    }
+
+    // Factory: Success - returns pointer to avoid copy/leak
+    static fn ok(val: T) -> *Result<T> {
         var r = new Result<T>();
         r.is_error = false;
         r.value = val;
-        // r.err_message is empty/null
         return r;
     }
 
-    // Factory: Failure
-    static fn err(msg: String) -> Result<T> {
+    // Factory: Failure - returns pointer
+    // Takes *String because 'new String()' returns pointer
+    static fn err(msg: *String) -> *Result<T> {
         var r = new Result<T>();
         r.is_error = true;
-        r.err_msg = msg;
+        unsafe {
+            r.err_msg = *msg;
+        }
         return r;
     }
 
     // "Give me value or crash"
     fn unwrap() -> T {
         if (this.is_error) {
+            println("Result.unwrap() failed: ");
+            if (this.err_msg.buffer != 0 as *char) {
+                println(this.err_msg.c_str());
+            } else {
+                println("Unknown error");
+            }
             exit(1);
         }
         return this.value;
@@ -37,5 +50,13 @@ struct Result<T> {
             return default_val;
         }
         return this.value;
+    }
+    
+    fn is_ok() -> bool {
+        return !this.is_error;
+    }
+    
+    fn is_err() -> bool {
+        return this.is_error;
     }
 }
